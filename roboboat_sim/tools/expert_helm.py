@@ -314,8 +314,23 @@ def racing_line(waypoints, circles: np.ndarray, half, margin: float,
 # --------------------------------------------------------------------------
 def speed_profile(p: np.ndarray, vessel, alloc, u_cap: float,
                   wz_cap: float | None, v_start: float = 0.0,
-                  v_end: float = 0.0) -> np.ndarray:
-    """Minimum-time speed along a fixed line: curvature cap, then fwd/back."""
+                  v_end: float = 0.0, ax_cap: float | None = None,
+                  ax_min_cap: float | None = None) -> np.ndarray:
+    """Minimum-time speed along a fixed line: curvature cap, then fwd/back.
+
+    ``ax_cap`` / ``ax_min_cap`` apply the config's ``ax_max`` / ``ax_min`` on top
+    of the thrust-derived bounds. **This was a real bug**: ``load_nav2_limits()``
+    read them and ``speed_profile`` never applied them, so the ``config`` variant
+    -- documented as "bounded by nav2_mppi.yaml's limits" and offered as the fair
+    tuning target -- was accelerating at up to 2.57 m/s^2 and braking at 3.61
+    against a configured +-1.50. Found by the critic agent, not by me.
+
+    It is worth 0.35 s on the channel, which is the honest reason it is a
+    footnote rather than a retraction of the target: the reference spends 98% of
+    its time at ``vx_max``, so what it does during the two accelerations barely
+    registers. That smallness is itself the more interesting finding -- see the
+    note on information content in the module docstring.
+    """
     k = curvature(p)
     ds = np.hypot(np.diff(p[:, 0]), np.diff(p[:, 1]))
     v = np.array([feasible_speed(vessel, alloc, ki, u_cap, wz_cap) for ki in k])
@@ -323,9 +338,13 @@ def speed_profile(p: np.ndarray, vessel, alloc, u_cap: float,
     v[-1] = min(v[-1], v_end)
     for i in range(len(v) - 1):                       # forward: accel limit
         _, a = surge_accel_bounds(vessel, alloc, v[i], k[i])
+        if ax_cap is not None:
+            a = min(a, ax_cap)
         v[i + 1] = min(v[i + 1], math.sqrt(max(0.0, v[i] ** 2 + 2 * a * ds[i])))
     for i in range(len(v) - 2, -1, -1):               # backward: decel limit
         d, _ = surge_accel_bounds(vessel, alloc, v[i + 1], k[i + 1])
+        if ax_min_cap is not None:
+            d = min(d, abs(ax_min_cap))
         v[i] = min(v[i], math.sqrt(max(0.0, v[i + 1] ** 2 + 2 * d * ds[i])))
     return v
 
@@ -335,7 +354,10 @@ def build_reference(waypoints, circles: np.ndarray, half, limits: dict,
     u_cap = 2.5 if variant == 'plant' else limits['vx_max']
     wz_cap = None if variant == 'plant' else limits['wz_max']
     p = racing_line(waypoints, circles, half, margin)
-    v = speed_profile(p, *load_plant(), u_cap, wz_cap)
+    ax_cap = None if variant == 'plant' else limits['ax_max']
+    ax_min_cap = None if variant == 'plant' else limits['ax_min']
+    v = speed_profile(p, *load_plant(), u_cap, wz_cap,
+                      ax_cap=ax_cap, ax_min_cap=ax_min_cap)
     ds = np.hypot(np.diff(p[:, 0]), np.diff(p[:, 1]))
     vmid = np.maximum(0.5 * (v[:-1] + v[1:]), 1e-3)
     t = np.concatenate([[0.0], np.cumsum(ds / vmid)])
