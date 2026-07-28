@@ -1,0 +1,480 @@
+# Nav2 configuration for the RoboBoat omni-catamaran, MPPI local controller.
+#
+# Two things make this different from a stock ground-robot config, and both
+# carry over to the 1:1 Unity sim:
+#
+#  1. There is no map and no AMCL. Open water has nothing to localise against,
+#     so map -> odom is a static identity transform (published by the bringup
+#     launch) and BOTH costmaps roll with the vehicle. Unknown space is treated
+#     as free, because unexplored water is navigable until the lidar says
+#     otherwise.
+#  2. The motion model is Omni and every velocity limit is derived from the
+#     thruster layout rather than guessed. roboboat_control's surrogate_dynamics
+#     node prints its achievable envelope on startup:
+#
+#         vx = 1.63 m/s   vy = 0.69 m/s   wz = 2.47 rad/s
+#
+#     The limits below sit under those with margin. If you change thruster
+#     count, placement or thrust in boat_params.yaml, re-read that log line and
+#     update this file -- MPPI sampling velocities the boat cannot reach is the
+#     single most common cause of "it works in sim, it wanders on the water".
+#
+#     Those are the TANGENTIAL figures -- the layout this file ships against.
+#     The previous X layout read vx 1.63 / vy 0.69 / wz 0.80. (An earlier
+#     revision of this comment printed the abandoned PINWHEEL envelope
+#     1.33/0.61/2.69 and claimed vx_max had come down to 1.05. Neither was
+#     ever true of the shipped config; corrected here.)
+#
+#      a) Surge and sway are UNCHANGED by the tangential re-cant: Fx 98.99 N
+#         and Fy 70.71 N are identical to the X layout's, to the newton. Only
+#         the yaw arm moved, 0.106 m -> 0.672 m. So vx_max stays 1.30, which
+#         is 80% of the 1.63 m/s envelope, exactly as before.
+#      b) wz rose 0.80 -> 2.47 rad/s and wz_max is deliberately NOT raised.
+#         Measured |wz| p99 is 0.232 rad/s against the current 0.55 cap, and
+#         0.0% of either scored run is spent above half of it -- the cap is
+#         provably not binding, so raising it is a no-op. The limiter is the
+#         cost function; see TwirlingCritic and PathAngleCritic below. That
+#         2.47 is also a steady-state solve driven by BOLLARD thrust: at
+#         2.47 rad/s the thrusters see ~1.7 m/s of inflow and the model has no
+#         advance-speed term. Up to ~0.9 rad/s inflow stays under 0.6 m/s,
+#         where bollard thrust is still defensible.
+#      c) Decoupling: at Mz = 10 N*m the X layout gave up 6.67 N of surge per
+#         N*m (Fx 98.99 -> 32.33); tangential gives up 1.053 N per N*m
+#         (98.99 -> 88.47). Turning is 6.3x cheaper in surge than it was.
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    # How long a BT action node waits for a server to ACKNOWLEDGE a goal --
+    # not to act on it. The 1000 ms default is fine on an idle box and is not
+    # fine here. Measured: with the follow camera rendering in software on the
+    # same four cores, controller_server took longer than a second to
+    # acknowledge a follow_path goal 25 s into the sprint, and bt_navigator
+    # aborted a run that was otherwise going perfectly -- 0.91 of the lap
+    # already driven, no contact, nothing wrong with the navigation at all.
+    #
+    # Raising this cannot mask a genuinely dead server: the lifecycle manager
+    # and the per-action result timeouts still catch that. It only stops a
+    # scheduling delay being reported as a navigation failure. On the real
+    # vehicle, where the CPU budget is known and the clock is real, 1000 ms
+    # is the more informative setting.
+    #
+    # 5000 was not enough either: with the camera running, planner_server took
+    # longer than five seconds to acknowledge a compute_path_through_poses
+    # goal at the boundary between the sprint's two legs. Every leg boundary
+    # is a fresh handshake, which is why the single-leg channel films happily
+    # and the two-leg sprint does not.
+    wait_for_service_timeout: 20000
+    action_server_result_timeout: 900.0
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    error_code_names:
+      - compute_path_error_code
+      - follow_path_error_code
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    costmap_update_timeout: 0.30
+    # Nav2 zeroes odometry velocities below these thresholds. The stock value
+    # for y is 0.5 m/s, which is fine for a diff-drive robot and catastrophic
+    # for a holonomic one -- it would erase almost the whole sway range of this
+    # boat before MPPI ever sees it.
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.5
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+    use_realtime_priority: false
+    # Jazzy default. Kilted and newer publish TwistStamped unconditionally --
+    # flip this and use_stamped_cmd_vel in boat_params.yaml together.
+    enable_stamped_cmd_vel: false
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      # A boat under thrust saturation accelerates slowly; the stock 10 s
+      # allowance trips spurious recoveries when turning into a current.
+      required_movement_radius: 0.6
+      movement_time_allowance: 20.0
+
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      stateful: True
+      # Station-keeping tolerance, not AMR docking tolerance.
+      xy_goal_tolerance: 0.50
+      yaw_goal_tolerance: 0.30
+
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+
+      # 56 * 0.05 = 2.8 s horizon => 3.6 m of look-ahead at vx_max. The local
+      # costmap below is 12 m across (6 m radius), comfortably more than that,
+      # which is what keeps the horizon from being silently truncated.
+      time_steps: 56
+      model_dt: 0.05          # must equal 1 / controller_frequency
+      batch_size: 2000
+      iteration_count: 1
+      temperature: 0.3
+      gamma: 0.015
+      motion_model: "Omni"
+      visualize: false
+      regenerate_noises: false
+      retry_attempt_limit: 1
+      # Must exceed the horizon's reach (2.8 s x 1.30 m/s = 3.64 m), otherwise
+      # rollouts extend past the end of the pruned path and the path-align and
+      # path-follow critics have nothing to score their tails against.
+      #
+      # Left at 4.0 when vx_max dropped, deliberately. It is not only a
+      # look-ahead: PathAlignCritic's offset_from_furthest is a minimum-index
+      # gate counted in path poses, and at a 0.20 m planner resolution 4.0 m
+      # is the ~21 poses that gate was calibrated against. Retuning it to
+      # 3.0 m to track vx_max cost the sprint its second leg -- the boat
+      # crawled at 0.10 m/s and timed out. See tuning/JOURNAL.md.
+      prune_distance: 4.0
+      transform_tolerance: 0.15
+
+      # Velocity envelope -- see the header note.
+      vx_max: 1.30
+      vx_min: -0.50           # reverse is available but slower and less useful
+      vy_max: 0.45            # sway is expensive on a catamaran; do not inflate
+      wz_max: 0.55
+
+      # Acceleration envelope. Peak thrust over surge mass is ~2.6 m/s^2, but
+      # thruster lag and the inner velocity loop mean the boat cannot sustain
+      # that, so these are deliberately below the theoretical maximum.
+      ax_max: 1.50
+      ax_min: -1.50
+      ay_max: 0.80
+      ay_min: -0.80
+      az_max: 0.80
+
+      # Sampling spread, roughly 25-40% of each limit.
+      vx_std: 0.35
+      vy_std: 0.20
+      wz_std: 0.25
+
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic",
+                "PathAlignCritic", "PathFollowCritic", "PathAngleCritic",
+                "PreferForwardCritic", "TwirlingCritic"]
+
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        # RETRACTED (journal 13). This comment used to argue for 8.00; that
+        # raise treated a pinwheel-specific symptom, cost ~0.09 m of clearance
+        # everywhere else, and was reverted. The value below is the original
+        # 3.81 and the reasoning that follows is kept only as the record of
+        # the buoy problem it was aimed at, which is real and still open:
+        #
+        # ...the pinwheel exposed a latent problem: the
+        # global plan routes ~1.25 m from the free-standing buoy at (6.0, 31.5)
+        # on the return leg, which is inside the margin this hull needs when it
+        # is yawed. Every layout has been planning that line; the X layout only
+        # survived it by OVERSHOOTING outward at speed. The pinwheel tracks the
+        # plan faithfully, so it inherits the flaw and clips.
+        #
+        # This is the term that holds the boat off inflated cells irrespective
+        # of what the plan asks for, so it is the right place to fix it. It also
+        # centres the boat better between paired gate buoys, where the cost from
+        # each side is symmetric.
+        cost_weight: 3.81
+        critical_cost: 300.0
+        # The hull is 1.5 m x 1.1 m -- far from circular. Point-cost checking
+        # would let a corner clip a buoy during a crab manoeuvre.
+        consider_footprint: true
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+        trajectory_point_step: 2
+
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        # Matched to PathFollowCritic below so the hand-off is clean.
+        threshold_to_consider: 2.5
+
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.8
+
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.8
+        # CAUTION: this is not an alignment offset, despite how the MPPI docs
+        # read. In path_align_critic.cpp it is a minimum-index GATE:
+        #   if (path_segments_count < offset_from_furthest_) return;
+        # where path_segments_count is furthest_reached_path_point. So it
+        # controls how far along the path the robot must be before this
+        # critic does anything at all. At the stock 20, with prune_distance
+        # 4.0 m and a 0.20 m planner resolution (~21 poses), it would barely
+        # ever fire. At 6 it fires almost always, at weight 14.0 -- the
+        # largest weight in this file. Untested either way; treat as a
+        # candidate, not a settled value.
+        offset_from_furthest: 6
+        use_path_orientations: false
+
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
+        threshold_to_consider: 2.5
+
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        # Raised 2.0 -> 6.0 and the dead band cut 1.0 -> 0.35 rad together.
+        # Verified in nav2_mppi_controller 1.3.12: this critic scores the
+        # TERMINAL trajectory yaw (trajectories.yaws[:, -1]) while
+        # TwirlingCritic scores the horizon MEAN of |wz|. So yawing at rate w
+        # saves 2.8*W_pa*w here and costs W_tw*w there, and break-even is
+        # W_tw <= 2.8*W_pa. At 2.0 vs 10.0 that is 5.6 against 10.0 -- fixing
+        # heading by rotating LOST by 1.79x at every yaw rate, everywhere on
+        # the course, which is why the boat crabbed instead. At 6.0 it is 16.8
+        # against 10.0, a 1.68x margin the other way.
+        #
+        # max_angle_to_furthest is an early-return gate on the CURRENT pose:
+        #   if (posePointAngle(pose, goal_x, goal_y, true) < max_angle_to_furthest_) return;
+        # At 1.0 rad that is a 57.3 deg band in which this critic contributes
+        # nothing, so yaw was purely penalised and sway was free. The measured
+        # channel crab episodes sit at 31.3 and 41.1 deg of sideslip -- inside
+        # it. 0.35 rad = 20 deg.
+        cost_weight: 6.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.8
+        max_angle_to_furthest: 0.35
+        # 0 = forward preference. The boat is holonomic, but its sensors face
+        # forward and sway costs ~3x the thrust of surge, so we still want it
+        # to point where it is going. Set 1 to let it travel any which way.
+        mode: 0
+
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.8
+
+      # Omni vehicles will happily spin while translating if nothing objects.
+      #
+      # NOTE the key names. Nav2's own MPPI README shows this critic
+      # configured with `twirling_cost_power` / `twirling_cost_weight`, but
+      # TwirlingCritic::initialize() reads `cost_power` / `cost_weight` like
+      # every other critic. The README keys are silently ignored and the
+      # critic runs at its 10.0 default. Copying that example cost us a whole
+      # experiment: two runs "testing" a weight change that never applied.
+      # Startup logs the value it actually used -- read them.
+      # 10.0, not the 5.0 this file used to claim. That 5.0 was never in
+      # effect (dead key), so every measurement ever taken here was at 10.0,
+      # and 10.0 is the only value with evidence behind it. Lowering it to
+      # 1.5 was measured and cost 20.7 s over the benchmark route.
+      TwirlingCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 10.0
+
+      # Enable once you know the real thruster deadband; commands below it
+      # produce noise and heat but no thrust.
+      # VelocityDeadbandCritic:
+      #   enabled: true
+      #   cost_power: 1
+      #   cost_weight: 35.0
+      #   deadband_velocities: [0.05, 0.05, 0.05]
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      # 6 m radius > the 3.6 m MPPI horizon, with room for the path-follow
+      # offsets to land on real cells.
+      width: 12
+      height: 12
+      resolution: 0.10
+      # Rectangular hull: bow/stern overhang matters when crabbing past a buoy.
+      footprint: "[[0.75, 0.55], [0.75, -0.55], [-0.75, -0.55], [-0.75, 0.55]]"
+      footprint_padding: 0.05
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        # A plain ObstacleLayer, not the stock VoxelLayer: the input is a
+        # single-plane LaserScan, so the voxel grid would cost memory and
+        # cycles to represent one z-slice.
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          clearing: True
+          marking: True
+          max_obstacle_height: 2.0
+          min_obstacle_height: -1.0
+          raytrace_max_range: 20.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 18.0
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # Inscribed radius is 0.55 m. A ~2.4x inflation gives MPPI a cost
+        # gradient to ride without walling off the 3 m channel gates.
+        inflation_radius: 1.30
+        cost_scaling_factor: 2.00
+      always_send_full_costmap: True
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      # Rolling, because there is no prior map of the course. 80 m spans the
+      # whole default course with the boat anywhere in it.
+      rolling_window: true
+      width: 80
+      height: 80
+      resolution: 0.20
+      # Unexplored water is navigable. With track_unknown_space true the
+      # planner would refuse to leave the lidar's footprint.
+      track_unknown_space: false
+      footprint: "[[0.75, 0.55], [0.75, -0.55], [-0.75, -0.55], [-0.75, 0.55]]"
+      footprint_padding: 0.05
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          clearing: True
+          marking: True
+          max_obstacle_height: 2.0
+          min_obstacle_height: -1.0
+          raytrace_max_range: 38.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 35.0
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 1.30
+        cost_scaling_factor: 2.00
+      always_send_full_costmap: True
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    costmap_update_timeout: 1.0
+    GridBased:
+      # Smac 2D rather than NavFn: it is cost-aware, so paths sit in the middle
+      # of a buoy gate instead of grazing one side of it. The boat is
+      # holonomic, so a 2D (non-kinematically-feasible) plan is perfectly
+      # trackable -- no need for the Hybrid-A* variants.
+      plugin: "nav2_smac_planner::SmacPlanner2D"
+      tolerance: 1.0
+      # Keep the plan at the costmap's own 0.20 m resolution: PathAlignCritic's
+      # offset_from_furthest above is derived from that number.
+      downsample_costmap: false
+      downsampling_factor: 1
+      allow_unknown: true
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      terminal_checking_interval: 5000
+      max_planning_time: 2.0
+      cost_travel_multiplier: 2.0
+      use_final_approach_orientation: false
+
+smoother_server:
+  ros__parameters:
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.15
+    simulate_ahead_time: 2.0
+    # Recovery rotation has to stay inside the boat's real yaw authority.
+    max_rotational_vel: 0.50
+    min_rotational_vel: 0.20
+    rotational_acc_lim: 0.80
+    enable_stamped_cmd_vel: false
+
+waypoint_follower:
+  ros__parameters:
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 0
+
+# Off by default: MPPI already produces smooth commands, and an extra smoothing
+# stage adds latency that MPPI's model does not know about. Enable it via the
+# bringup launch's use_velocity_smoother argument when you want to reproduce a
+# specific low-level rate limit from the real vehicle.
+velocity_smoother:
+  ros__parameters:
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    max_velocity: [1.30, 0.45, 0.55]
+    min_velocity: [-0.50, -0.45, -0.55]
+    max_accel: [1.50, 0.80, 0.80]
+    max_decel: [-1.50, -0.80, -0.80]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+    enable_stamped_cmd_vel: false

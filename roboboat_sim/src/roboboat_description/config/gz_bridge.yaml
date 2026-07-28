@@ -1,0 +1,73 @@
+# ros_gz_bridge configuration.
+#
+# Keep this list minimal: every bridged topic is a serialise/deserialise hop
+# on the critical path. Notably absent are camera images -- Nav2 does not need
+# them and they are by far the most expensive thing to bridge.
+
+# Simulation clock. Everything downstream runs with use_sim_time:=true.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# Body-frame twist actually applied to the hull. Published by
+# roboboat_control's surrogate_dynamics node -- NOT by Nav2 directly.
+- ros_topic_name: "/boat/cmd_vel_applied"
+  gz_topic_name: "/model/roboboat/cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "gz.msgs.Twist"
+  direction: ROS_TO_GZ
+
+# Ground-truth odometry and the odom -> base_link transform.
+- ros_topic_name: "/odom"
+  gz_topic_name: "/model/roboboat/odometry"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/tf"
+  gz_topic_name: "/model/roboboat/pose"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# Perception.
+- ros_topic_name: "/scan"
+  gz_topic_name: "/lidar/scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/imu/data"
+  gz_topic_name: "/imu/data"
+  ros_type_name: "sensor_msgs/msg/Imu"
+  gz_type_name: "gz.msgs.IMU"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/navsat/fix"
+  gz_topic_name: "/navsat/fix"
+  ros_type_name: "sensor_msgs/msg/NavSatFix"
+  gz_type_name: "gz.msgs.NavSat"
+  direction: GZ_TO_ROS
+
+# Camera images. Only present when running the --cameras world; otherwise
+# these ROS publishers simply stay silent. Images are by far the most
+# expensive thing to bridge, which is why the default world has no cameras.
+- ros_topic_name: "/camera/overhead"
+  gz_topic_name: "/camera/overhead"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/camera/hero"
+  gz_topic_name: "/camera/hero"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/camera/chase"
+  gz_topic_name: "/camera/chase"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS

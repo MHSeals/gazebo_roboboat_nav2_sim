@@ -1,0 +1,302 @@
+<?xml version="1.0"?>
+<!--
+  RoboBoat surrogate: omni catamaran, 4 thrusters in an X configuration.
+
+  Deliberate simplifications (see docs/architecture.md):
+    * ONE physical link. Every visual/collision hangs off base_link, so
+      sdformat's fixed-joint lumping has nothing to destroy. The extra links
+      below exist only so robot_state_publisher emits sensor TF; each Gazebo
+      sensor overrides its message frame_id via <gz_frame_id> to match.
+    * No buoyancy, no added-mass, no wave field. Gazebo is a kinematic
+      integrator here: the roboboat_control surrogate_dynamics node owns the
+      3-DOF rigid-body model and feeds Gazebo a body-frame twist.
+    * Gravity is off on the hull, so the boat can never sink, heel, or bounce.
+
+  All geometry constants live in this file and are reused by the Gazebo
+  sensor poses and by roboboat_control/config/boat_params.yaml (keep the
+  thruster geometry in the two files in sync — tools/validate.py checks it).
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="roboboat">
+
+  <!-- Off by default: rendering a camera costs far more than the lidar, and
+       nothing in the navigation stack consumes it. Turn it on only when you
+       want footage of a run as Gazebo draws it. -->
+  <xacro:arg name="chase_camera" default="false"/>
+
+  <!-- ============================ parameters ============================ -->
+  <xacro:property name="hull_length"      value="1.40"/>
+  <xacro:property name="hull_radius"      value="0.125"/>
+  <xacro:property name="hull_separation"  value="0.75"/>   <!-- y, centre-to-centre -->
+  <xacro:property name="deck_length"      value="1.00"/>
+  <xacro:property name="deck_width"       value="0.90"/>
+  <xacro:property name="deck_thickness"   value="0.06"/>
+  <xacro:property name="deck_z"           value="0.16"/>
+
+  <xacro:property name="mast_height"      value="0.18"/>
+  <xacro:property name="lidar_z"          value="0.35"/>
+  <xacro:property name="imu_z"            value="0.20"/>
+  <xacro:property name="gps_z"            value="0.40"/>
+
+  <!-- Thruster mount geometry. Must match boat_params.yaml. -->
+  <xacro:property name="thr_x"            value="0.55"/>
+  <xacro:property name="thr_y"            value="0.40"/>
+  <xacro:property name="thr_z"            value="-0.10"/>
+  <xacro:property name="thr_len"          value="0.16"/>
+  <xacro:property name="thr_radius"       value="0.045"/>
+
+  <!-- Rigid-body properties. These are the *Gazebo* numbers; they are only
+       used for visualisation mass and are intentionally NOT the numbers the
+       surrogate dynamics integrates (that model adds hydrodynamic added
+       mass on top). -->
+  <xacro:property name="mass"             value="35.0"/>
+  <xacro:property name="ixx"              value="4.0"/>
+  <xacro:property name="iyy"              value="6.0"/>
+  <xacro:property name="izz"              value="9.0"/>
+
+  <xacro:property name="pi_2"             value="1.5707963267948966"/>
+  <xacro:property name="deg45"            value="0.7853981633974483"/>
+  <xacro:property name="deg135"           value="2.356194490192345"/>
+
+  <!-- ============================= materials ============================ -->
+  <material name="hull_white"><color rgba="0.92 0.92 0.94 1.0"/></material>
+  <material name="deck_grey"> <color rgba="0.25 0.27 0.30 1.0"/></material>
+  <material name="accent">    <color rgba="0.95 0.45 0.10 1.0"/></material>
+  <material name="dark">      <color rgba="0.10 0.10 0.12 1.0"/></material>
+
+  <!-- ============================== macros ============================== -->
+  <!-- One catamaran hull: capsule-ish (cylinder + two end caps as spheres). -->
+  <xacro:macro name="hull" params="name y">
+    <visual>
+      <origin xyz="0 ${y} 0" rpy="0 ${pi_2} 0"/>
+      <geometry><cylinder radius="${hull_radius}" length="${hull_length}"/></geometry>
+      <material name="hull_white"/>
+    </visual>
+    <visual>
+      <origin xyz="${hull_length/2} ${y} 0" rpy="0 0 0"/>
+      <geometry><sphere radius="${hull_radius}"/></geometry>
+      <material name="hull_white"/>
+    </visual>
+    <visual>
+      <origin xyz="${-hull_length/2} ${y} 0" rpy="0 0 0"/>
+      <geometry><sphere radius="${hull_radius}"/></geometry>
+      <material name="hull_white"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- One thruster nacelle. 'ang' is the thrust-axis heading in the body
+       frame: +x is forward, +y is port. -->
+  <xacro:macro name="thruster_visual" params="name x y ang">
+    <visual>
+      <origin xyz="${x} ${y} ${thr_z}" rpy="0 ${pi_2} ${ang}"/>
+      <geometry><cylinder radius="${thr_radius}" length="${thr_len}"/></geometry>
+      <material name="dark"/>
+    </visual>
+    <visual>
+      <origin xyz="${x} ${y} ${thr_z}" rpy="0 ${pi_2} ${ang}"/>
+      <geometry><cylinder radius="${thr_radius*1.35}" length="${thr_len*0.3}"/></geometry>
+      <material name="accent"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- A frame-only link: exists so robot_state_publisher emits TF for it.
+       Tiny inertia keeps sdformat happy when the fixed joint is lumped. -->
+  <xacro:macro name="frame_link" params="name xyz rpy:='0 0 0'">
+    <link name="${name}">
+      <inertial>
+        <mass value="1e-5"/>
+        <origin xyz="0 0 0"/>
+        <inertia ixx="1e-8" ixy="0" ixz="0" iyy="1e-8" iyz="0" izz="1e-8"/>
+      </inertial>
+    </link>
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${name}"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- ============================ base_link ============================= -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${ixx}" ixy="0.0" ixz="0.0" iyy="${iyy}" iyz="0.0" izz="${izz}"/>
+    </inertial>
+
+    <xacro:hull name="port"      y="${ hull_separation/2}"/>
+    <xacro:hull name="starboard" y="${-hull_separation/2}"/>
+
+    <!-- deck -->
+    <visual>
+      <origin xyz="0 0 ${deck_z}" rpy="0 0 0"/>
+      <geometry><box size="${deck_length} ${deck_width} ${deck_thickness}"/></geometry>
+      <material name="deck_grey"/>
+    </visual>
+
+    <!-- sensor mast -->
+    <visual>
+      <origin xyz="0 0 ${deck_z + mast_height/2}" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.035" length="${mast_height}"/></geometry>
+      <material name="dark"/>
+    </visual>
+
+    <!-- bow marker so heading is obvious in RViz/Gazebo -->
+    <visual>
+      <origin xyz="${deck_length/2 - 0.06} 0 ${deck_z + deck_thickness}" rpy="0 0 0"/>
+      <geometry><box size="0.12 0.12 0.03"/></geometry>
+      <material name="accent"/>
+    </visual>
+
+    <!-- Tangential quad. Every motor's forward thrust drives the boat FORWARD,
+         so all four forward is pure surge, and yaw uses a mix of forward and
+         reverse as it always did.
+
+         The cant sign is the whole story. The old X had FL/RR at +45 and
+         FR/RL at -45, which points each motor nearly RADIALLY: only 9 degrees
+         off the vector from the CoG, so its yaw arm collapsed to 0.106 m of a
+         0.680 m radius. Flipping every cant points them tangentially instead
+         and the arm becomes 0.672 m, for no loss of surge or sway at all.
+
+         Keep these in step with boat_params.yaml; tools/validate.py compares
+         all four angles and rejects a degenerate yaw arm. -->
+    <xacro:thruster_visual name="fl" x="${ thr_x}" y="${ thr_y}" ang="${-deg45}"/>
+    <xacro:thruster_visual name="fr" x="${ thr_x}" y="${-thr_y}" ang="${ deg45}"/>
+    <xacro:thruster_visual name="rl" x="${-thr_x}" y="${ thr_y}" ang="${ deg45}"/>
+    <xacro:thruster_visual name="rr" x="${-thr_x}" y="${-thr_y}" ang="${-deg45}"/>
+
+    <!-- Collision is a single box covering the whole platform. Nothing in
+         this sim relies on contact (the GPU lidar hits *visuals*), but a
+         collision shape keeps Gazebo's inertia/AABB tooling well behaved. -->
+    <collision>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="${hull_length} ${hull_separation + 2*hull_radius} 0.35"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- =========================== frame links =========================== -->
+  <xacro:frame_link name="lidar_link"     xyz="0 0 ${lidar_z}"/>
+  <xacro:frame_link name="imu_link"       xyz="0 0 ${imu_z}"/>
+  <xacro:frame_link name="navsat_link"    xyz="0 0 ${gps_z}"/>
+
+  <xacro:frame_link name="thruster_fl_link" xyz="${ thr_x} ${ thr_y} ${thr_z}" rpy="0 0 ${ deg45}"/>
+  <xacro:frame_link name="thruster_fr_link" xyz="${ thr_x} ${-thr_y} ${thr_z}" rpy="0 0 ${-deg45}"/>
+  <xacro:frame_link name="thruster_rl_link" xyz="${-thr_x} ${ thr_y} ${thr_z}" rpy="0 0 ${-deg45}"/>
+  <xacro:frame_link name="thruster_rr_link" xyz="${-thr_x} ${-thr_y} ${thr_z}" rpy="0 0 ${ deg45}"/>
+
+  <!-- ============================== Gazebo ============================= -->
+  <gazebo reference="base_link">
+    <!-- No gravity: the hull is held at the waterline by construction, which
+         removes the entire buoyancy/settling problem and lets us run with a
+         large physics step. -->
+    <gravity>false</gravity>
+
+    <sensor name="lidar" type="gpu_lidar">
+      <pose>0 0 ${lidar_z} 0 0 0</pose>
+      <topic>lidar/scan</topic>
+      <gz_frame_id>lidar_link</gz_frame_id>
+      <update_rate>15</update_rate>
+      <always_on>1</always_on>
+      <visualize>false</visualize>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>640</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>1</samples>
+            <resolution>1</resolution>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <!-- Nothing on the boat sits in the z=0.35 scan plane except the
+               mast directly beneath the sensor, so min range can stay short. -->
+          <min>0.50</min>
+          <max>40.0</max>
+          <resolution>0.02</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.02</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+
+    <sensor name="imu" type="imu">
+      <pose>0 0 ${imu_z} 0 0 0</pose>
+      <topic>imu/data</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
+      <update_rate>50</update_rate>
+      <always_on>1</always_on>
+    </sensor>
+
+    <!-- Deliberately modest. This renders in software on the same four cores
+         MPPI optimises on, and at 900x560/10 Hz it cost enough CPU that
+         controller_server missed bt_navigator's goal-acknowledgement window
+         and a good run was aborted 0.91 of the way round the sprint. A camera
+         that changes the result is not observing the run. -->
+    <xacro:if value="$(arg chase_camera)">
+      <!-- Behind and above the transom, looking forward and slightly down:
+           the classic follow view, and the only one at which a 1.4 m hull is
+           actually legible. -->
+      <sensor name="chase" type="camera">
+        <pose>-5.5 0 2.6 0 0.30 0</pose>
+        <topic>camera/chase</topic>
+        <gz_frame_id>base_link</gz_frame_id>
+        <update_rate>4</update_rate>
+        <always_on>1</always_on>
+        <camera>
+          <horizontal_fov>1.15</horizontal_fov>
+          <image>
+            <width>480</width>
+            <height>300</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.2</near>
+            <far>300</far>
+          </clip>
+        </camera>
+      </sensor>
+    </xacro:if>
+
+    <sensor name="navsat" type="navsat">
+      <pose>0 0 ${gps_z} 0 0 0</pose>
+      <topic>navsat/fix</topic>
+      <gz_frame_id>navsat_link</gz_frame_id>
+      <update_rate>10</update_rate>
+      <always_on>1</always_on>
+    </sensor>
+  </gazebo>
+
+  <gazebo>
+    <!-- Body-frame twist command. The surrogate dynamics node is the only
+         thing that should ever publish here; Nav2 talks to *that* node, not
+         to this topic. -->
+    <plugin filename="gz-sim-velocity-control-system"
+            name="gz::sim::systems::VelocityControl">
+      <topic>/model/roboboat/cmd_vel</topic>
+    </plugin>
+
+    <!-- Ground-truth odometry + odom->base_link TF. Swap for an EKF fed by
+         IMU/NavSat when you want to study state-estimation error; for the
+         Nav2 proof of concept, perfect odometry isolates the controller. -->
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <dimensions>2</dimensions>
+      <odom_topic>/model/roboboat/odometry</odom_topic>
+      <tf_topic>/model/roboboat/pose</tf_topic>
+    </plugin>
+  </gazebo>
+
+</robot>

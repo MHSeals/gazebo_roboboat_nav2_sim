@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>roboboat_control</name>
+  <version>0.1.0</version>
+  <description>
+    Surrogate 3-DOF vessel dynamics and X-configuration thrust allocation for
+    the RoboBoat omni-catamaran. Owns all of the boat's physics so that Gazebo
+    can stay a pure kinematic renderer.
+  </description>
+  <maintainer email="doug@douglasjohnson.org">Doug Johnson</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>python3-numpy</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

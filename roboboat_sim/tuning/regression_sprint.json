@@ -1,0 +1,56 @@
+{
+  "_comment": [
+    "Frozen contract for the Emergency Response Sprint (RoboBoat Task 3).",
+    "",
+    "Set from three successful runs -- two counter-clockwise, one clockwise.",
+    "Direction is not a property of the course: at the competition a light",
+    "beacon on the mark sets it at run time, so a configuration that only",
+    "works one way round is not a working configuration. Both directions are",
+    "in the samples for that reason.",
+    "",
+    "'task_passed' delegates to the scorer's own rule -- entrance gate crossed",
+    "outbound, a full turn about the mark in the commanded direction with no",
+    "laundered counter-winding, gate crossed inbound, nothing touched. Counting",
+    "gates cannot express that.",
+    "",
+    "The clearance floor is a fraction of the achievable maximum, as on the",
+    "channel, so it means the same thing if the gate width changes. Note how",
+    "much lower it is than the channel's: this gate is 2.4 m against 2.8 m, so",
+    "the ceiling is 0.466 m rather than 0.650 m AND the boat uses more of it.",
+    "0.20 is min - 4sd. The run-to-run spread here is 0.013, five times",
+    "tighter than the channel's -- threading one gate twice is a far more",
+    "repeatable thing to measure than threading ten different ones.",
+    "",
+    "elapsed_s is drift, not a requirement. It is the competition score for",
+    "this task, so it must stay visible, but a wall-clock-sized regression is",
+    "not a safety failure and should not red the build on its own."
+  ],
+  "task": "sprint",
+  "captured_at_commit": "1a66909",
+  "samples": {
+    "runs": 3,
+    "directions": ["ccw", "ccw", "cw"],
+    "min_clearance_m": [0.118, 0.126, 0.130],
+    "clearance_fraction": [0.253, 0.270, 0.279],
+    "elapsed_s": [138.6, 136.5, 131.4],
+    "path_length_m": [68.2, 67.5, 67.8],
+    "laps_completed": [1.0, 1.0, 1.0]
+  },
+  "require": {
+    "task_passed": true,
+    "contact": false,
+    "min_clearance_fraction_at_least": 0.20
+  },
+  "reference": {
+    "min_clearance_m": 0.125,
+    "clearance_ceiling_m": 0.466,
+    "clearance_fraction": 0.268,
+    "elapsed_s": 135.5,
+    "path_length_m": 67.8
+  },
+  "drift_warn": {
+    "clearance_fraction_below": 0.23,
+    "elapsed_s_excess_frac": 0.20,
+    "path_length_m_excess_frac": 0.10
+  }
+}

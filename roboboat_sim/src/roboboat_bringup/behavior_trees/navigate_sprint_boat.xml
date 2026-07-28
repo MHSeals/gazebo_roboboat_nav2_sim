@@ -1,0 +1,74 @@
+<!--
+  Speed challenge variant: ring a mark buoy and come back out.
+
+  Identical to navigate_through_poses_boat.xml except for one number, and the
+  reason for that number is the whole point of having a second tree.
+
+  RemovePassedGoals radius 1.6 -> 0.8 m.
+
+  The channel tree needs 1.6 m because its waypoints ARE gate centres, which
+  sit inside inflated space; the cost field holds the boat off at 1-2 m and a
+  smaller radius means the waypoint can never be retired. Measured: the boat
+  oscillated between gates for 400 s and completed 3 of 10.
+
+  This task has no waypoint in inflated space. The ring sits 3.0 m from a
+  0.184 m mark whose inflation reaches 1.48 m, and the approach and stand-off
+  poses are 3 m clear of the gate on its axis. So there is no standoff to
+  overcome, and the radius should instead be well UNDER the ring's waypoint
+  spacing, because RemovePassedGoals pops from the front of the list for as
+  long as the front goal is inside the radius. At 1.6 m against a 2.30 m
+  spacing, arriving at one ring waypoint can put the next one inside the
+  radius too and retire both; the ring then degenerates into a wider polygon
+  and the boat rings the mark at a radius it was never asked to.
+
+  0.8 m is a little over a third of the spacing: large enough that a waypoint
+  is retired as the boat passes it, small enough that no two are ever inside
+  it at once.
+-->
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
+        <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
+            <ReactiveSequence>
+              <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.8"/>
+              <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}"/>
+            </ReactiveSequence>
+            <Sequence>
+              <WouldAPlannerRecoveryHelp error_code="{compute_path_error_code}"/>
+              <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+            </Sequence>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}"/>
+          <Sequence>
+            <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
+            <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+          </Sequence>
+        </RecoveryNode>
+      </PipelineSequence>
+      <Sequence>
+        <Fallback>
+          <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
+          <WouldAPlannerRecoveryHelp error_code="{compute_path_error_code}"/>
+        </Fallback>
+        <ReactiveFallback name="RecoveryFallback">
+          <GoalUpdated/>
+          <RoundRobin name="RecoveryActions">
+            <Sequence name="ClearingActions">
+              <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+              <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+            </Sequence>
+            <Spin spin_dist="1.57" error_code_id="{spin_error_code}"/>
+            <Wait wait_duration="5.0"/>
+            <BackUp backup_dist="0.30" backup_speed="0.15" error_code_id="{backup_error_code}"/>
+          </RoundRobin>
+        </ReactiveFallback>
+      </Sequence>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

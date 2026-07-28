@@ -1,0 +1,59 @@
+{
+  "_comment": [
+    "Frozen contract for the navigate-the-channel task.",
+    "",
+    "Set from FOUR runs of the unmodified configuration, not one. The first",
+    "version of this file was written from a single run that measured 0.380 m",
+    "of clearance, and put the floor at 0.25 m. Three further runs came back",
+    "at 0.320, 0.245 and 0.376 -- so that floor would have failed a perfectly",
+    "good run on the very next commit. The spread is sd 0.063 m on a mean of",
+    "0.330 m, which is 4x what the open-water benchmark suite showed; that",
+    "suite parked its goals in open water, and threading a 2.4 m gate is a",
+    "much noisier thing to measure.",
+    "",
+    "'require' is pass/fail. Every new piece of work must leave these true.",
+    "'drift_warn' is reported and never fatal, because rebuilding course",
+    "geometry moves absolute numbers by construction; a harness that reds on",
+    "the first legitimate edit is a harness that gets switched off.",
+    "",
+    "min_clearance_fraction is the term that survives a geometry change. It",
+    "normalises the measured clearance by the most the hull could possibly",
+    "clear the tightest gate by if it threaded the exact centreline --",
+    "(free_water - beam)/2, which is 0.65 m for the 2.40 m gates. Widening or",
+    "narrowing a gate moves the numerator and the denominator together, so",
+    "the criterion means the same thing before and after. The floor of 0.20 is",
+    "mean - 3sd expressed as a fraction (0.217), rounded down: it binds on a",
+    "real degradation and not on the noise.",
+    "",
+    "gates_transited is a fraction of gates_total rather than an absolute",
+    "count, so adding or removing a gate cannot silently weaken the contract."
+  ],
+  "task": "channel",
+  "captured_at_commit": "67b39e6",
+  "samples": {
+    "runs": 4,
+    "min_clearance_m": [0.380, 0.320, 0.245, 0.376],
+    "path_length_m": [96.04, 96.60, 95.90, 96.40],
+    "gates_transited": [10, 10, 10, 10],
+    "contact": [false, false, false, false]
+  },
+  "require": {
+    "all_gates_transited": true,
+    "contact": false,
+    "min_clearance_fraction_at_least": 0.20
+  },
+  "reference": {
+    "gates_total": 10,
+    "min_clearance_m": 0.330,
+    "min_clearance_m_sd": 0.063,
+    "clearance_ceiling_m": 0.65,
+    "clearance_fraction": 0.508,
+    "path_length_m": 96.23,
+    "worst_offset_from_centre_m": 0.51
+  },
+  "drift_warn": {
+    "clearance_fraction_below": 0.40,
+    "path_length_m_excess_frac": 0.10,
+    "worst_offset_from_centre_m": 0.75
+  }
+}

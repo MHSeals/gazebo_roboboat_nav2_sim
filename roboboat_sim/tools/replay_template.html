@@ -1,0 +1,674 @@
+<title>RoboBoat — Nav2 MPPI run replay</title>
+
+<style>
+@font-face{font-family:"CondBold";src:url(data:font/woff2;base64,__FONT_COND__) format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"CondLight";src:url(data:font/woff2;base64,__FONT_CONDREG__) format("woff2");font-weight:300;font-display:block}
+@font-face{font-family:"Readout";src:url(data:font/woff2;base64,__FONT_MONO__) format("woff2");font-weight:400;font-display:block}
+
+/* Tokens. Components only ever read these, never raw hex, so the two themes
+   stay in sync. Neutrals carry a blue bias toward the chart water. */
+:root{
+  --ground:#E9E3D4; --panel:#FBF8F1; --chart:#D3E0E6; --chart-grid:#B6CAD2;
+  --ink:#111C24; --ink-dim:#40545F; --muted:#6A8090; --rule:#C9C0AC;
+  --accent:#C4761A; --track:#1D7F9E; --alarm:#C6341C;
+  --ok:#2F7D4F; --warn:#B87A10;
+  --shadow:0 1px 2px rgba(17,28,36,.08),0 8px 24px rgba(17,28,36,.06);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#080E14; --panel:#0F1A23; --chart:#0C1721; --chart-grid:#172733;
+    --ink:#D9E4EA; --ink-dim:#8CA3B0; --muted:#6A8090; --rule:#1E2E3A;
+    --accent:#F0A23C; --track:#4BC8E8; --alarm:#FF5B3F;
+    --ok:#4FBE7B; --warn:#F0A23C;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 30px rgba(0,0,0,.35);
+  }
+}
+/* The viewer's own toggle must win over the OS preference in both directions. */
+:root[data-theme="dark"]{
+  --ground:#080E14; --panel:#0F1A23; --chart:#0C1721; --chart-grid:#172733;
+  --ink:#D9E4EA; --ink-dim:#8CA3B0; --muted:#6A8090; --rule:#1E2E3A;
+  --accent:#F0A23C; --track:#4BC8E8; --alarm:#FF5B3F;
+  --ok:#4FBE7B; --warn:#F0A23C;
+  --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 30px rgba(0,0,0,.35);
+}
+:root[data-theme="light"]{
+  --ground:#E9E3D4; --panel:#FBF8F1; --chart:#D3E0E6; --chart-grid:#B6CAD2;
+  --ink:#111C24; --ink-dim:#40545F; --muted:#6A8090; --rule:#C9C0AC;
+  --accent:#C4761A; --track:#1D7F9E; --alarm:#C6341C;
+  --ok:#2F7D4F; --warn:#B87A10;
+  --shadow:0 1px 2px rgba(17,28,36,.08),0 8px 24px rgba(17,28,36,.06);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:"CondLight",system-ui,sans-serif;font-weight:300;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:14px 12px 40px;
+  display:flex;flex-direction:column;gap:12px}
+
+/* ---- header ---- */
+.masthead{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px}
+h1{
+  font-family:"CondBold",system-ui,sans-serif;font-weight:700;
+  font-size:clamp(21px,5.4vw,30px);line-height:1.05;margin:0;
+  letter-spacing:.005em;text-wrap:balance;
+}
+h1 .sub{color:var(--muted);font-family:"CondLight",sans-serif;font-weight:300}
+.stamp{
+  font-family:"Readout",monospace;font-size:11px;color:var(--muted);
+  letter-spacing:.04em;margin-left:auto;
+}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  display:inline-flex;align-items:baseline;gap:6px;
+  padding:4px 9px;border:1px solid var(--rule);border-radius:2px;
+  background:var(--panel);
+  font-family:"Readout",monospace;font-size:11.5px;
+  font-variant-numeric:tabular-nums;
+}
+.chip b{font-family:"CondBold",sans-serif;font-weight:700;font-size:11px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.chip.good{border-color:color-mix(in srgb,var(--ok) 55%,var(--rule))}
+.chip.good .v{color:var(--ok)}
+.chip.warnish .v{color:var(--warn)}
+
+/* ---- main grid ---- */
+.deck{display:flex;flex-direction:column;gap:12px}
+@media (min-width:960px){
+  .deck{display:grid;grid-template-columns:minmax(0,1fr) 292px;
+    align-items:start;gap:14px}
+  .rail{position:sticky;top:12px}
+}
+
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:3px;
+  box-shadow:var(--shadow)}
+
+/* ---- chart ---- */
+.chartbox{position:relative;overflow:hidden;border-radius:3px 3px 0 0}
+canvas#chart{display:block;width:100%;height:56vh;min-height:310px;
+  max-height:600px;touch-action:none;cursor:grab;background:var(--chart)}
+canvas#chart:active{cursor:grabbing}
+.overlay{
+  position:absolute;top:8px;left:8px;display:flex;flex-direction:column;gap:4px;
+  font-family:"Readout",monospace;font-size:11px;pointer-events:none;
+  text-shadow:0 1px 3px var(--chart);
+}
+.overlay .rowlab{color:var(--muted);letter-spacing:.05em}
+.viewbtns{position:absolute;top:8px;right:8px;display:flex;gap:5px}
+button{
+  font-family:"CondBold",system-ui,sans-serif;font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase;font-size:11px;
+  color:var(--ink);background:var(--panel);
+  border:1px solid var(--rule);border-radius:2px;
+  padding:7px 10px;cursor:pointer;
+}
+button:hover{border-color:var(--accent)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{
+  background:var(--accent);border-color:var(--accent);color:var(--ground);
+}
+
+/* ---- transport ---- */
+.transport{
+  border-top:1px solid var(--rule);padding:10px;
+  display:flex;flex-direction:column;gap:9px;
+}
+.tline{display:flex;align-items:center;gap:9px}
+.play{min-width:74px;padding:10px 12px;font-size:12px}
+.clock{
+  font-family:"Readout",monospace;font-size:12.5px;
+  font-variant-numeric:tabular-nums;color:var(--ink-dim);white-space:nowrap;
+}
+.spacer{flex:1}
+
+/* The scrubber sits directly on the clearance ribbon, so where the run got
+   tight is visible before you go looking for it. */
+.scrub{position:relative;height:38px}
+canvas#ribbon{position:absolute;inset:0 0 14px 0;width:100%;height:24px;
+  border-radius:2px;display:block;cursor:pointer}
+input[type=range]{
+  position:absolute;left:0;right:0;bottom:0;width:100%;margin:0;height:14px;
+  -webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;
+}
+input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--rule)}
+input[type=range]::-moz-range-track{height:3px;background:var(--rule)}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;margin-top:-7px;border-radius:50%;
+  background:var(--accent);border:2px solid var(--panel);
+}
+input[type=range]::-moz-range-thumb{
+  width:16px;height:16px;border-radius:50%;
+  background:var(--accent);border:2px solid var(--panel);
+}
+input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.ribbonkey{
+  display:flex;gap:12px;font-family:"Readout",monospace;font-size:10.5px;
+  color:var(--muted);flex-wrap:wrap;
+}
+.ribbonkey i{display:inline-block;width:9px;height:9px;border-radius:1px;
+  margin-right:4px;vertical-align:-1px;font-style:normal}
+
+/* ---- instruments ---- */
+.rail{display:flex;flex-direction:column;gap:12px}
+.pad{padding:11px 12px}
+.hdr{
+  font-family:"CondBold",sans-serif;font-weight:700;font-size:10.5px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+  margin:0 0 9px;
+}
+.gauges{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.g{display:flex;flex-direction:column;gap:2px}
+.g .lab{font-family:"CondBold",sans-serif;font-weight:700;font-size:9.5px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.g .val{font-family:"Readout",monospace;font-size:17px;
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.g .unit{font-size:10px;color:var(--muted)}
+
+/* Thrust quad, laid out the way the thrusters sit on the hull. */
+.quad{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.th{display:flex;flex-direction:column;gap:3px}
+.th .lab{font-family:"CondBold",sans-serif;font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.th .lab span{font-family:"Readout",monospace;letter-spacing:0;color:var(--ink-dim)}
+.bar{height:6px;background:var(--chart-grid);border-radius:1px;position:relative;
+  overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;left:50%;background:var(--ok);
+  transition:none;font-style:normal}
+.bar i.rev{background:var(--alarm)}
+
+/* ---- goals ---- */
+ol.goals{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+ol.goals li{
+  display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:baseline;
+  padding:7px 0;border-bottom:1px solid var(--rule);
+  font-family:"Readout",monospace;font-size:11.5px;font-variant-numeric:tabular-nums;
+}
+ol.goals li:last-child{border-bottom:0}
+ol.goals li.done{color:var(--ink-dim)}
+ol.goals li.active{color:var(--accent)}
+ol.goals .n{font-family:"CondBold",sans-serif;font-size:11px;color:var(--muted)}
+ol.goals li.active .n{color:var(--accent)}
+ol.goals .st{font-size:10.5px;color:var(--ok)}
+
+.layers{display:flex;flex-wrap:wrap;gap:5px}
+.note{font-size:13.5px;line-height:1.5;color:var(--ink-dim);max-width:62ch;margin:0}
+.note code{font-family:"Readout",monospace;font-size:12px;color:var(--ink)}
+footer{color:var(--muted);font-size:12.5px;line-height:1.5;max-width:66ch}
+footer a{color:var(--accent)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>RoboBoat <span class="sub">— Nav2 MPPI run replay</span></h1>
+    <div class="stamp" id="stamp"></div>
+  </header>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="deck">
+    <section class="card">
+      <div class="chartbox">
+        <canvas id="chart"></canvas>
+        <div class="overlay">
+          <div><span class="rowlab">POS</span> <span id="oPos">—</span></div>
+          <div><span class="rowlab">HDG</span> <span id="oHdg">—</span></div>
+          <div><span class="rowlab">SCALE</span> <span id="oScale">—</span></div>
+        </div>
+        <div class="viewbtns">
+          <button id="bFollow" aria-pressed="true">Follow</button>
+          <button id="bFit">Fit</button>
+        </div>
+      </div>
+
+      <div class="transport">
+        <div class="tline">
+          <button class="play" id="bPlay" aria-label="Play or pause">Play</button>
+          <button id="bSpeed">1&times;</button>
+          <div class="spacer"></div>
+          <div class="clock"><span id="tNow">0.0</span> / <span id="tEnd">0.0</span> s</div>
+        </div>
+        <div class="scrub">
+          <canvas id="ribbon"></canvas>
+          <input type="range" id="seek" min="0" max="100" value="0" step="1"
+                 aria-label="Seek through the run">
+        </div>
+        <div class="ribbonkey">
+          <span>Clearance to nearest obstacle</span>
+          <span><i style="background:var(--ok)"></i>&gt;1.0 m</span>
+          <span><i style="background:var(--warn)"></i>0.3–1.0 m</span>
+          <span><i style="background:var(--alarm)"></i>&lt;0.3 m</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="rail">
+      <section class="card pad">
+        <h2 class="hdr">Vessel</h2>
+        <div class="gauges">
+          <div class="g"><span class="lab">Surge</span>
+            <span class="val" id="gVx">0.00</span><span class="unit">m/s</span></div>
+          <div class="g"><span class="lab">Sway</span>
+            <span class="val" id="gVy">0.00</span><span class="unit">m/s</span></div>
+          <div class="g"><span class="lab">Yaw</span>
+            <span class="val" id="gWz">0.00</span><span class="unit">rad/s</span></div>
+        </div>
+      </section>
+
+      <section class="card pad">
+        <h2 class="hdr">Clearance</h2>
+        <div class="g"><span class="val" id="gClr" style="font-size:26px">—</span>
+          <span class="unit">m to nearest obstacle</span></div>
+      </section>
+
+      <section class="card pad">
+        <h2 class="hdr">Thrust</h2>
+        <div class="quad" id="quad"></div>
+      </section>
+
+      <section class="card pad">
+        <h2 class="hdr">Goals</h2>
+        <ol class="goals" id="goals"></ol>
+      </section>
+
+      <section class="card pad">
+        <h2 class="hdr">Layers</h2>
+        <div class="layers">
+          <button id="lTrack" aria-pressed="true">Track</button>
+          <button id="lPlan" aria-pressed="true">Plan</button>
+          <button id="lScan" aria-pressed="true">Lidar</button>
+          <button id="lThrust" aria-pressed="true">Thrust</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <footer>
+    <p class="note" id="blurb"></p>
+  </footer>
+</div>
+
+<script id="run" type="application/json">__DATA__</script>
+<script>
+(function(){
+"use strict";
+const D = JSON.parse(document.getElementById('run').textContent);
+const F = D.frames, OBS = D.obstacles, SCANS = D.scans, PLANS = D.plans;
+const HX = D.footprint[0], HY = D.footprint[1];
+const T_END = F.length ? F[F.length-1][0] : 0;
+
+// Frame layout, mirroring frame_fields in the recording.
+const T=0,X=1,Y=2,YAW=3,VX=4,VY=5,WZ=6,FL=7,FR=8,RL=9,RR=10,CLR=11;
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- state ---------- */
+let t = 0, playing = false, speed = 1, follow = true;
+let scale = 12, cx = 0, cy = 0;          // px per metre, view centre in metres
+const layers = {track:true, plan:true, scan:true, thrust:true};
+
+/* ---------- canvas ---------- */
+const cv = document.getElementById('chart'), ctx = cv.getContext('2d');
+let W = 0, H = 0;
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = cv.getBoundingClientRect();
+  W = r.width; H = r.height;
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawRibbon(); draw();
+}
+const sx = wx => (wx - cx)*scale + W/2;
+const sy = wy => H/2 - (wy - cy)*scale;     // +y is north/port, so flip
+
+function bounds(){
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  const add=(x,y)=>{x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);};
+  OBS.forEach(o=>add(o.x,o.y));
+  F.forEach(f=>add(f[X],f[Y]));
+  return {x0,y0,x1,y1};
+}
+function fit(){
+  const b = bounds(), pad = 4;
+  const w = (b.x1-b.x0)+pad*2, h = (b.y1-b.y0)+pad*2;
+  scale = Math.min(W/w, H/h);
+  cx = (b.x0+b.x1)/2; cy = (b.y0+b.y1)/2;
+  follow = false; document.getElementById('bFollow').setAttribute('aria-pressed','false');
+  draw();
+}
+
+/* ---------- lookup ---------- */
+function frameAt(time){
+  let lo=0, hi=F.length-1;
+  if(!F.length) return null;
+  while(lo<hi){ const m=(lo+hi+1)>>1; if(F[m][T]<=time) lo=m; else hi=m-1; }
+  return F[lo];
+}
+function lastBefore(arr, time){
+  let out=null;
+  for(let i=0;i<arr.length;i++){ if(arr[i].t<=time) out=arr[i]; else break; }
+  return out;
+}
+
+/* ---------- drawing ---------- */
+function grid(){
+  const step = scale > 26 ? 1 : scale > 11 ? 5 : 10;
+  ctx.strokeStyle = css('--chart-grid'); ctx.lineWidth = 1;
+  const b={x0:cx-W/(2*scale),x1:cx+W/(2*scale),y0:cy-H/(2*scale),y1:cy+H/(2*scale)};
+  ctx.beginPath();
+  for(let x=Math.ceil(b.x0/step)*step;x<=b.x1;x+=step){
+    ctx.moveTo(Math.round(sx(x))+.5,0); ctx.lineTo(Math.round(sx(x))+.5,H);
+  }
+  for(let y=Math.ceil(b.y0/step)*step;y<=b.y1;y+=step){
+    ctx.moveTo(0,Math.round(sy(y))+.5); ctx.lineTo(W,Math.round(sy(y))+.5);
+  }
+  ctx.stroke();
+  document.getElementById('oScale').textContent = step+' m grid';
+}
+
+function drawBoat(f){
+  const px=sx(f[X]), py=sy(f[Y]), a=-f[YAW];
+  // At course-wide zoom the hull is a few pixels across, so ring it.
+  if(HX*scale < 9){
+    ctx.beginPath(); ctx.arc(px,py,11,0,6.2832);
+    ctx.strokeStyle=css('--accent'); ctx.lineWidth=1.4; ctx.globalAlpha=.75;
+    ctx.stroke(); ctx.globalAlpha=1;
+  }
+  ctx.save(); ctx.translate(px,py); ctx.rotate(a);
+  // hull footprint: the same rectangle the clearance figure is measured from
+  ctx.beginPath();
+  ctx.rect(-HX*scale, -HY*scale, 2*HX*scale, 2*HY*scale);
+  ctx.fillStyle = css('--accent'); ctx.globalAlpha=.24; ctx.fill();
+  ctx.globalAlpha=1; ctx.strokeStyle=css('--accent'); ctx.lineWidth=1.6; ctx.stroke();
+  // bow
+  ctx.beginPath();
+  ctx.moveTo(HX*scale,0); ctx.lineTo(HX*scale-9,-5); ctx.lineTo(HX*scale-9,5);
+  ctx.closePath(); ctx.fillStyle=css('--accent'); ctx.fill();
+
+  if(layers.thrust){
+    // Thruster positions and 45-degree axes, matching the X configuration.
+    const P=[[.55,.40,Math.PI/4,FL],[.55,-.40,-Math.PI/4,FR],
+             [-.55,.40,-Math.PI/4,RL],[-.55,-.40,Math.PI/4,RR]];
+    ctx.lineWidth=2.4; ctx.lineCap='round';
+    P.forEach(([tx,ty,ang,idx])=>{
+      const n=f[idx]/35, L=n*26;
+      if(Math.abs(L)<1.2) return;
+      const bx=tx*scale, by=-ty*scale;
+      ctx.beginPath(); ctx.moveTo(bx,by);
+      ctx.lineTo(bx+Math.cos(-ang)*L, by+Math.sin(-ang)*L);
+      ctx.strokeStyle = f[idx]>=0 ? css('--ok') : css('--alarm');
+      ctx.stroke();
+    });
+  }
+  ctx.restore();
+}
+
+function draw(){
+  const f = frameAt(t);
+  if(follow && f){ cx=f[X]; cy=f[Y]; }
+  ctx.fillStyle=css('--chart'); ctx.fillRect(0,0,W,H);
+  grid();
+
+  // lidar returns, most recent sweep
+  if(layers.scan){
+    const s = lastBefore(SCANS, t);
+    if(s){
+      ctx.fillStyle=css('--muted'); ctx.globalAlpha=.75;
+      s.p.forEach(p=>{ ctx.fillRect(sx(p[0])-1.1, sy(p[1])-1.1, 2.2, 2.2); });
+      ctx.globalAlpha=1;
+    }
+  }
+
+  // travelled track
+  if(layers.track){
+    ctx.beginPath(); let started=false;
+    for(let i=0;i<F.length && F[i][T]<=t;i++){
+      const p=F[i]; const X0=sx(p[X]), Y0=sy(p[Y]);
+      if(!started){ctx.moveTo(X0,Y0);started=true;} else ctx.lineTo(X0,Y0);
+    }
+    ctx.strokeStyle=css('--accent'); ctx.globalAlpha=.5; ctx.lineWidth=1.8;
+    ctx.stroke(); ctx.globalAlpha=1;
+  }
+
+  // active global plan
+  if(layers.plan){
+    const pl = lastBefore(PLANS, t);
+    if(pl && pl.p.length>1){
+      ctx.beginPath();
+      pl.p.forEach((p,i)=> i?ctx.lineTo(sx(p[0]),sy(p[1])):ctx.moveTo(sx(p[0]),sy(p[1])));
+      ctx.strokeStyle=css('--track'); ctx.lineWidth=2; ctx.setLineDash([6,4]);
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  // Course furniture, in its real colours. Buoys are circles; the dock walls
+  // are rectangles and must be drawn as such -- a 9 m wall reduced to a
+  // circumscribed disc would blanket a quarter of the course.
+  OBS.forEach(o=>{
+    ctx.fillStyle=o.colour;
+    ctx.lineWidth=1; ctx.strokeStyle=css('--chart');
+    if(o.shape==='box'){
+      ctx.save(); ctx.translate(sx(o.x),sy(o.y)); ctx.rotate(-o.yaw);
+      ctx.beginPath();
+      ctx.rect(-o.hx*scale,-o.hy*scale,2*o.hx*scale,2*o.hy*scale);
+      ctx.fill(); ctx.stroke(); ctx.restore();
+    } else {
+      const r=Math.max(o.r*scale,2.5);
+      ctx.beginPath(); ctx.arc(sx(o.x),sy(o.y),r,0,6.2832);
+      ctx.fill(); ctx.stroke();
+    }
+  });
+
+  // goals
+  D.goals.forEach((g,i)=>{
+    const gx=sx(g.x), gy=sy(g.y), reached=g.t<=t;
+    ctx.strokeStyle = reached ? css('--muted') : css('--track');
+    ctx.lineWidth=1.5; ctx.globalAlpha = reached?.5:1;
+    ctx.beginPath();
+    ctx.moveTo(gx-8,gy); ctx.lineTo(gx+8,gy);
+    ctx.moveTo(gx,gy-8); ctx.lineTo(gx,gy+8);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(gx,gy,5,0,6.2832); ctx.stroke();
+    ctx.globalAlpha=1;
+    ctx.font='700 10px CondBold, sans-serif';
+    ctx.fillStyle = reached ? css('--muted') : css('--track');
+    ctx.fillText(String(i+1), gx+10, gy-8);
+  });
+
+  if(f) drawBoat(f);
+  readouts(f);
+}
+
+/* ---------- clearance ribbon ---------- */
+const rb = document.getElementById('ribbon'), rctx = rb.getContext('2d');
+function clrColour(c){
+  if(c>1.0) return css('--ok');
+  if(c>0.3) return css('--warn');
+  return css('--alarm');
+}
+function drawRibbon(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const r=rb.getBoundingClientRect();
+  rb.width=Math.round(r.width*dpr); rb.height=Math.round(r.height*dpr);
+  rctx.setTransform(dpr,0,0,dpr,0,0);
+  const w=r.width,h=r.height;
+  rctx.fillStyle=css('--chart'); rctx.fillRect(0,0,w,h);
+  if(!F.length) return;
+  for(let px=0;px<w;px++){
+    const time=(px/w)*T_END;
+    const f=frameAt(time);
+    if(!f) continue;
+    const c=Math.min(f[CLR],3);
+    rctx.fillStyle=clrColour(c);
+    // Height encodes proximity too, so the tight passes read as notches.
+    const bh=Math.max(3, h*(1-Math.min(c,2)/2)*0.85+3);
+    rctx.globalAlpha=.9;
+    rctx.fillRect(px,h-bh,1,bh);
+  }
+  rctx.globalAlpha=1;
+  const hx=(t/T_END)*w;
+  rctx.strokeStyle=css('--ink'); rctx.lineWidth=1;
+  rctx.beginPath(); rctx.moveTo(hx+.5,0); rctx.lineTo(hx+.5,h); rctx.stroke();
+}
+
+/* ---------- readouts ---------- */
+const quad = document.getElementById('quad');
+const THR=[['FL',FL],['FR',FR],['RL',RL],['RR',RR]];
+THR.forEach(([lab])=>{
+  const d=document.createElement('div'); d.className='th';
+  d.innerHTML='<div class="lab">'+lab+' <span data-v>0</span></div>'+
+              '<div class="bar"><i data-b></i></div>';
+  quad.appendChild(d);
+});
+const bars=[...quad.querySelectorAll('[data-b]')], vals=[...quad.querySelectorAll('[data-v]')];
+
+function readouts(f){
+  if(!f) return;
+  document.getElementById('gVx').textContent=f[VX].toFixed(2);
+  document.getElementById('gVy').textContent=f[VY].toFixed(2);
+  document.getElementById('gWz').textContent=f[WZ].toFixed(2);
+  const c=f[CLR];
+  const gc=document.getElementById('gClr');
+  gc.textContent = c>90 ? '—' : c.toFixed(2);
+  gc.style.color = c>90 ? '' : clrColour(c);
+  THR.forEach(([,idx],i)=>{
+    const n=Math.max(-1,Math.min(1,f[idx]/35));
+    bars[i].style.left = (n>=0? 50 : 50+n*50)+'%';
+    bars[i].style.width = Math.abs(n)*50+'%';
+    bars[i].className = n>=0?'':'rev';
+    vals[i].textContent = f[idx].toFixed(0)+' N';
+  });
+  document.getElementById('oPos').textContent =
+    f[X].toFixed(1)+', '+f[Y].toFixed(1)+' m';
+  document.getElementById('oHdg').textContent =
+    (((f[YAW]*180/Math.PI)+360)%360).toFixed(0)+'°';
+  document.getElementById('tNow').textContent=f[T].toFixed(1);
+  document.querySelectorAll('#goals li').forEach((li,i)=>{
+    const g=D.goals[i];
+    li.className = g.t<=t ? 'done' : (D.goals.findIndex(q=>q.t>t)===i ? 'active':'');
+  });
+}
+
+/* ---------- goal list ---------- */
+D.goals.forEach((g,i)=>{
+  const li=document.createElement('li');
+  li.innerHTML='<span class="n">'+(i+1)+'</span>'+
+    '<span>'+g.x.toFixed(0)+', '+g.y.toFixed(0)+' m</span>'+
+    '<span class="st">'+(g.ok?'reached':'FAILED')+'</span>';
+  li.addEventListener('click',()=>{ t=Math.max(0,g.t-6); sync(); });
+  document.getElementById('goals').appendChild(li);
+});
+
+/* ---------- transport ---------- */
+const seek=document.getElementById('seek');
+seek.max=String(Math.max(1,Math.round(T_END*10)));
+document.getElementById('tEnd').textContent=T_END.toFixed(1);
+function sync(){ seek.value=String(Math.round(t*10)); drawRibbon(); draw(); }
+seek.addEventListener('input',()=>{ t=Number(seek.value)/10; drawRibbon(); draw(); });
+
+const bPlay=document.getElementById('bPlay');
+bPlay.addEventListener('click',()=>{
+  if(t>=T_END-0.05) t=0;
+  playing=!playing; bPlay.textContent=playing?'Pause':'Play';
+  if(playing) last=performance.now();
+});
+const bSpeed=document.getElementById('bSpeed');
+bSpeed.addEventListener('click',()=>{
+  speed = speed===1?2 : speed===2?4 : 1;
+  bSpeed.innerHTML=speed+'&times;';
+});
+const bFollow=document.getElementById('bFollow');
+bFollow.addEventListener('click',()=>{
+  follow=!follow; bFollow.setAttribute('aria-pressed',String(follow));
+  if(follow) scale=Math.max(scale,14);
+  draw();
+});
+document.getElementById('bFit').addEventListener('click',fit);
+
+[['lTrack','track'],['lPlan','plan'],['lScan','scan'],['lThrust','thrust']]
+.forEach(([id,key])=>{
+  const b=document.getElementById(id);
+  b.addEventListener('click',()=>{
+    layers[key]=!layers[key]; b.setAttribute('aria-pressed',String(layers[key])); draw();
+  });
+});
+
+rb.addEventListener('pointerdown',e=>{
+  const r=rb.getBoundingClientRect();
+  t=Math.max(0,Math.min(T_END,((e.clientX-r.left)/r.width)*T_END));
+  sync();
+});
+
+/* ---------- pan and pinch ---------- */
+const pts=new Map(); let pinch0=0, scale0=1;
+cv.addEventListener('pointerdown',e=>{
+  cv.setPointerCapture(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pts.size===2){
+    const [a,b]=[...pts.values()];
+    pinch0=Math.hypot(a.x-b.x,a.y-b.y); scale0=scale;
+  }
+});
+cv.addEventListener('pointermove',e=>{
+  const prev=pts.get(e.pointerId); if(!prev) return;
+  if(pts.size===1){
+    cx-=(e.clientX-prev.x)/scale; cy+=(e.clientY-prev.y)/scale;
+    follow=false; bFollow.setAttribute('aria-pressed','false');
+  }
+  pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pts.size===2 && pinch0>0){
+    const [a,b]=[...pts.values()];
+    scale=Math.max(2,Math.min(120,scale0*Math.hypot(a.x-b.x,a.y-b.y)/pinch0));
+  }
+  draw();
+});
+['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,e=>{
+  pts.delete(e.pointerId); if(pts.size<2) pinch0=0;
+}));
+cv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  scale=Math.max(2,Math.min(120,scale*(e.deltaY<0?1.12:1/1.12)));
+  draw();
+},{passive:false});
+
+/* ---------- loop ---------- */
+let last=performance.now();
+function tick(now){
+  if(playing){
+    t+=(now-last)/1000*speed;
+    if(t>=T_END){ t=T_END; playing=false; bPlay.textContent='Play'; }
+    seek.value=String(Math.round(t*10));
+    drawRibbon(); draw();
+  }
+  last=now; requestAnimationFrame(tick);
+}
+
+/* ---------- chips and blurb ---------- */
+const reached=D.goals.filter(g=>g.ok).length;
+const mc=D.min_clearance;
+document.getElementById('chips').innerHTML=
+  '<span class="chip '+(reached===D.goals.length?'good':'')+'"><b>Goals</b>'+
+    '<span class="v">'+reached+'/'+D.goals.length+'</span></span>'+
+  '<span class="chip '+(mc>0.3?'good':'warnish')+'"><b>Min clearance</b>'+
+    '<span class="v">'+mc.toFixed(2)+' m</span></span>'+
+  '<span class="chip good"><b>Controller</b><span class="v">20.0 Hz</span></span>'+
+  '<span class="chip good"><b>RTF</b><span class="v">1.0</span></span>'+
+  '<span class="chip"><b>Duration</b><span class="v">'+T_END.toFixed(0)+' s</span></span>';
+document.getElementById('stamp').textContent=
+  'ROS 2 Jazzy · Gazebo Harmonic · '+F.length+' frames @ 10 Hz';
+document.getElementById('blurb').textContent=
+  'Recorded from a live headless run: Nav2 plans with Smac 2D, MPPI tracks the '+
+  'path, and the boat is driven by a 3-DOF surrogate model rather than water '+
+  'physics. Buoys are drawn in their lateral-mark colours; the dashed cyan line '+
+  'is the active global plan; grey dots are the most recent lidar sweep. '+
+  'Clearance is measured from the same 1.5 × 1.1 m footprint polygon Nav2 uses.';
+
+/* ---------- go ---------- */
+new ResizeObserver(resize).observe(cv);
+window.addEventListener('resize',resize);
+resize(); fit(); scale*=1.0; draw(); requestAnimationFrame(tick);
+})();
+</script>

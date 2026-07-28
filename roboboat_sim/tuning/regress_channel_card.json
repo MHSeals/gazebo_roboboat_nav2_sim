@@ -1,0 +1,86 @@
+{
+  "gates_total": 10,
+  "gates_transited": 10,
+  "contact": false,
+  "clearance_ceiling_m": 0.65,
+  "clearance_fraction": 0.537,
+  "gates": [
+    {
+      "gate": "start",
+      "transited": true,
+      "offset_from_centre_m": 0.172,
+      "free_water_m": 2.8,
+      "clearance_ceiling_m": 0.85
+    },
+    {
+      "gate": "chan_a",
+      "transited": true,
+      "offset_from_centre_m": 0.365,
+      "free_water_m": 2.6,
+      "clearance_ceiling_m": 0.75
+    },
+    {
+      "gate": "chan_b",
+      "transited": true,
+      "offset_from_centre_m": 0.053,
+      "free_water_m": 2.4,
+      "clearance_ceiling_m": 0.65
+    },
+    {
+      "gate": "chan_c",
+      "transited": true,
+      "offset_from_centre_m": 0.093,
+      "free_water_m": 2.4,
+      "clearance_ceiling_m": 0.65
+    },
+    {
+      "gate": "chan_d",
+      "transited": true,
+      "offset_from_centre_m": 0.072,
+      "free_water_m": 2.6,
+      "clearance_ceiling_m": 0.75
+    },
+    {
+      "gate": "speed_in",
+      "transited": true,
+      "offset_from_centre_m": 0.485,
+      "free_water_m": 3.6,
+      "clearance_ceiling_m": 1.25
+    },
+    {
+      "gate": "speed_out",
+      "transited": true,
+      "offset_from_centre_m": 0.184,
+      "free_water_m": 3.6,
+      "clearance_ceiling_m": 1.25
+    },
+    {
+      "gate": "return_a",
+      "transited": true,
+      "offset_from_centre_m": 0.022,
+      "free_water_m": 2.8,
+      "clearance_ceiling_m": 0.85
+    },
+    {
+      "gate": "return_b",
+      "transited": true,
+      "offset_from_centre_m": 0.105,
+      "free_water_m": 2.8,
+      "clearance_ceiling_m": 0.85
+    },
+    {
+      "gate": "finish",
+      "transited": true,
+      "offset_from_centre_m": 0.276,
+      "free_water_m": 3.2,
+      "clearance_ceiling_m": 1.05
+    }
+  ],
+  "passed": true,
+  "task": "channel",
+  "type": "gate_transit",
+  "min_clearance_m": 0.349,
+  "path_length_m": 95.46,
+  "elapsed_s": 103.15,
+  "mean_speed_mps": 0.925
+}

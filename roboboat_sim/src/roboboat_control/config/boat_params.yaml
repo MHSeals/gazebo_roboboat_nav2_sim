@@ -1,0 +1,93 @@
+# Surrogate dynamics parameters.
+#
+# These numbers define the boat as far as Nav2 is concerned. Gazebo contributes
+# nothing to the motion. Tune here first; only then re-tune MPPI.
+#
+# Sanity relationships worth preserving when you edit:
+#   * sway must be harder than surge (a catamaran resists sideways motion) --
+#     keep lin_sway / quad_sway well above their surge counterparts, otherwise
+#     MPPI will happily plan crab-walks the real hull cannot execute;
+#   * the steady-state envelope printed by the node on startup is the ceiling
+#     for nav2_mppi.yaml's vx_max / vy_max / wz_max.
+
+/**:
+  ros__parameters:
+    # 'dynamic'  : full allocation + thruster lag + 3-DOF integration (default)
+    # 'kinematic': rate-limited twist passthrough, for isolating Nav2 issues
+    mode: "dynamic"
+    update_rate: 100.0
+    cmd_vel_topic: "cmd_vel"
+    # Nav2 on Jazzy publishes geometry_msgs/Twist unless controller_server's
+    # enable_stamped_cmd_vel is true. Kilted and newer are TwistStamped-only --
+    # flip this at the same time you upgrade.
+    use_stamped_cmd_vel: false
+    # Stop the boat if the controller stalls or is shut down.
+    cmd_timeout: 0.5
+
+    # ---- thruster layout (must match roboboat.urdf.xacro) ----
+    thrusters:
+      # 'tangential': 45 deg motors canted so every motor's FORWARD thrust
+      #             drives the boat forward. All four forward is pure surge,
+      #             exactly as in the X, and yaw still needs a mix of forward
+      #             and reverse -- but the arms are 0.672 m instead of 0.106,
+      #             so yaw is 6.3x easier for NO loss of surge or sway.
+      # 'x'       : the old layout. Same "all forward = surge" property, but
+      #             each motor is canted the other way, which points it nearly
+      #             RADIALLY (9 deg off the vector from the CoG). x*sin(a) and
+      #             y*cos(a) then almost cancel and the arm collapses to
+      #             0.106 m of a 0.680 m radius -- 84% thrown away.
+      # 'pinwheel': tangential too, but every motor oriented the same way
+      #             round, so all four forward is pure YAW. More yaw still
+      #             (94 N.m), but surge must then reverse two motors and loses
+      #             28.6%. Measured and rejected. See tuning/JOURNAL.md.
+      #
+      # The cant SIGN is the whole story: radial wastes the arm, tangential
+      # keeps 99% of it, and it costs nothing either way.
+      layout: "tangential"
+      # Chirality, used by the 'pinwheel' layout only: +1 => all four forward
+      # spins counter-clockwise (positive yaw, REP-103). A T200 is reversible,
+      # so this is a wiring convention rather than a mounting fact -- what
+      # matters is only that all four agree.
+      sense: 1.0
+      # Fx and Fy do not depend on mounting position at all; only the yaw arm
+      # does. Tangential gives 0.7071 * (x + y) = 0.672 m, which is 99% of the
+      # 0.680 m physical radius. (The X's arm is 0.7071 * (x - y) = 0.106 m --
+      # same motors, same mounts, opposite cant.)
+      #
+      # Left at the vehicle's existing mounting on purpose: the change is where
+      # the motors POINT, and needs no motor to be physically relocated.
+      x: 0.55                # m, longitudinal offset from CoG
+      y: 0.40                # m, lateral offset from CoG
+      z: -0.10               # m, below the waterline (marker display only)
+      angle_deg: 45.0        # cant magnitude; the layout sets each sign
+      max_forward: 35.0      # N, roughly a T200 at 12 V
+      max_reverse: 25.0      # N, props are less efficient in reverse
+      time_constant: 0.15    # s, first-order spin-up
+      max_rate: 400.0        # N/s, slew limit
+
+    # ---- rigid body + hydrodynamic damping ----
+    vessel:
+      mass_surge: 38.5       # kg, 35 kg hull + ~10% added mass
+      mass_sway: 63.0        # kg, 35 kg hull + ~80% added mass
+      inertia_yaw: 12.0      # kg.m^2
+      lin_surge: 20.0        # N/(m/s)
+      lin_sway: 60.0
+      lin_yaw: 8.0           # N.m/(rad/s)
+      quad_surge: 25.0       # N/(m/s)^2
+      quad_sway: 90.0
+      quad_yaw: 10.0         # N.m/(rad/s)^2
+
+    # ---- inner velocity loop ----
+    # Gains read as closed-loop bandwidth (rad/s); they are multiplied by the
+    # mass matrix inside the controller. Raise until thrust saturates on step
+    # commands, then back off ~30%.
+    controller:
+      gain_surge: 2.5
+      gain_sway: 2.5
+      gain_yaw: 3.0
+
+    # ---- only used when mode == 'kinematic' ----
+    kinematic:
+      accel_surge: 1.2       # m/s^2
+      accel_sway: 0.8
+      accel_yaw: 1.5         # rad/s^2

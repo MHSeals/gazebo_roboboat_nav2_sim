@@ -1,0 +1,72 @@
+{
+  "gates_total": 10,
+  "gates_transited": 10,
+  "contact": false,
+  "gates": [
+    {
+      "gate": "start",
+      "transited": true,
+      "offset_from_centre_m": 0.18,
+      "free_water_m": 2.8
+    },
+    {
+      "gate": "chan_a",
+      "transited": true,
+      "offset_from_centre_m": 0.36,
+      "free_water_m": 2.6
+    },
+    {
+      "gate": "chan_b",
+      "transited": true,
+      "offset_from_centre_m": 0.06,
+      "free_water_m": 2.4
+    },
+    {
+      "gate": "chan_c",
+      "transited": true,
+      "offset_from_centre_m": 0.14,
+      "free_water_m": 2.4
+    },
+    {
+      "gate": "chan_d",
+      "transited": true,
+      "offset_from_centre_m": 0.01,
+      "free_water_m": 2.6
+    },
+    {
+      "gate": "speed_in",
+      "transited": true,
+      "offset_from_centre_m": 0.48,
+      "free_water_m": 3.6
+    },
+    {
+      "gate": "speed_out",
+      "transited": true,
+      "offset_from_centre_m": 0.18,
+      "free_water_m": 3.6
+    },
+    {
+      "gate": "return_a",
+      "transited": true,
+      "offset_from_centre_m": 0.07,
+      "free_water_m": 2.8
+    },
+    {
+      "gate": "return_b",
+      "transited": true,
+      "offset_from_centre_m": 0.04,
+      "free_water_m": 2.8
+    },
+    {
+      "gate": "finish",
+      "transited": true,
+      "offset_from_centre_m": 0.21,
+      "free_water_m": 3.2
+    }
+  ],
+  "passed": true,
+  "task": "channel",
+  "type": "gate_transit",
+  "min_clearance_m": 0.32,
+  "path_length_m": 96.58
+}

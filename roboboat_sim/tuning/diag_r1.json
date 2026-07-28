@@ -1,0 +1,77 @@
+{
+  "goals_total": 4,
+  "goals_reached": 3,
+  "min_clearance_m": 1.642,
+  "p05_clearance_m": 2.033,
+  "median_clearance_m": 3.799,
+  "total_seconds": 138.9,
+  "reached_seconds": 131.7,
+  "path_length_m": 75.08,
+  "mean_efficiency": 0.856,
+  "mean_speed_ms": 0.542,
+  "cmd_jerk": 0.198,
+  "controller_hz": 20.19,
+  "cmd_period_p95_s": 0.055,
+  "cmd_period_median_s": 0.05,
+  "mean_error_m": 4.94,
+  "encounters": [
+    1.642,
+    1.891,
+    2.417,
+    2.696
+  ],
+  "encounter_count": 4,
+  "encounter_min_mean": 2.162,
+  "odom_samples": 6925,
+  "odom_rate_hz": 49.9,
+  "per_goal": [
+    {
+      "x": 10.0,
+      "y": 6.0,
+      "ok": true,
+      "status": 4,
+      "seconds": 17.8,
+      "error_m": 0.418,
+      "travelled_m": 11.43,
+      "straight_m": 11.28,
+      "efficiency": 0.987,
+      "leg_min_clearance_m": 1.642
+    },
+    {
+      "x": 34.5,
+      "y": 9.5,
+      "ok": false,
+      "status": 6,
+      "seconds": 7.2,
+      "error_m": 18.907,
+      "travelled_m": 6.25,
+      "straight_m": 6.15,
+      "efficiency": 0.985,
+      "leg_min_clearance_m": 3.545
+    },
+    {
+      "x": 33.0,
+      "y": 25.0,
+      "ok": true,
+      "status": 4,
+      "seconds": 51.9,
+      "error_m": 0.271,
+      "travelled_m": 31.13,
+      "straight_m": 24.65,
+      "efficiency": 0.792,
+      "leg_min_clearance_m": 1.891
+    },
+    {
+      "x": 12.0,
+      "y": 26.0,
+      "ok": true,
+      "status": 4,
+      "seconds": 62.0,
+      "error_m": 0.163,
+      "travelled_m": 26.28,
+      "straight_m": 20.74,
+      "efficiency": 0.789,
+      "leg_min_clearance_m": 3.145
+    }
+  ]
+}
