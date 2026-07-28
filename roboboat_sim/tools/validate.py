@@ -335,6 +335,55 @@ def _horizon_fits() -> str:
     return f'{reach:.2f} m reach, {radius:.2f} m radius'
 
 
+@check('every configured controller plugin has a parameter block')
+def _controller_plugins_configured() -> str:
+    """Two controller instances means two ways to be silently wrong.
+
+    A plugin named in `controller_plugins` with no parameter block loads at its
+    library defaults, and a behavior tree naming a `default_controller` that is
+    not in `controller_plugins` fails at runtime rather than at launch. Both are
+    the same class of failure as the `twirling_cost_weight` dead key: the stack
+    comes up, nothing complains, and the measurement is of something else.
+    """
+    nav2 = load_yaml(BRINGUP / 'config' / 'nav2_mppi.yaml')
+    controller = nav2['controller_server']['ros__parameters']
+    listed = list(controller['controller_plugins'])
+    missing = [n for n in listed if not isinstance(controller.get(n), dict)]
+    assert not missing, f'controller_plugins with no parameter block: {missing}'
+
+    import re
+    for tree in sorted((BRINGUP / 'behavior_trees').glob('*.xml')):
+        for name in re.findall(r'default_controller="([^"]+)"', tree.read_text()):
+            assert name in listed, (
+                f'{tree.name} selects default_controller {name!r}, which is not '
+                f'in controller_plugins {listed}')
+
+    # Duplicated blocks must differ only where they are meant to. A second
+    # controller that silently drifts from the first is a two-variable
+    # experiment nobody registered.
+    if len(listed) > 1:
+        def flat(d, pre=''):
+            out = {}
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    out.update(flat(v, pre + k + '.'))
+                else:
+                    out[pre + k] = v
+            return out
+        base = flat(controller[listed[0]])
+        for other in listed[1:]:
+            cmp = flat(controller[other])
+            keys = set(base) | set(cmp)
+            diff = sorted(k for k in keys if base.get(k) != cmp.get(k))
+            allowed = {'PathAngleCritic.max_angle_to_furthest'}
+            unexpected = [k for k in diff if k not in allowed]
+            assert not unexpected, (
+                f'{listed[0]} and {other} differ in {unexpected}; only '
+                f'{sorted(allowed)} is intended to differ, so update this '
+                f'check deliberately rather than letting the blocks drift')
+    return f'{len(listed)} controller(s): {", ".join(listed)}'
+
+
 @check('MPPI critic list matches the configured critic blocks')
 def _critics_configured() -> str:
     nav2 = load_yaml(BRINGUP / 'config' / 'nav2_mppi.yaml')

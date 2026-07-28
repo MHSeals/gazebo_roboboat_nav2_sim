@@ -2292,3 +2292,329 @@ available thrust. Worth roughly 4 s on a 95 s run. Every candidate lever for it
 independent of the weight once `W_tw < 2.8*W_pa`; a shorter `PathAlign`; a
 longer aim point) trades against gate clearance, which is the binding contract.
 Not a defect against the stated target. Recorded, not chased.
+---
+
+# Phase 3 — "would a human expert drive it like this?"
+
+A three-agent loop: a full-context planner (me), an alternate planner given
+deliberately streamlined context, a critic with full context whose only jobs are
+to catch biased reasoning and stop rabbit holes, and a novelty agent mandated to
+push the most extreme optimisation it can defend. The target was not a metric but
+a question — *if a human expert were at the helm, is this what it would look
+like?* — so the first job was to make that question answerable.
+
+**This box is not the box the rest of this journal was measured on.** 12 cores
+here against 4 before. Elapsed reproduces (104.5 s against arm J's 103.1) but
+**channel clearance does not: 0.221 m here against 0.326 m there**, and two of
+three baseline runs trip `drift_warn`. Every clearance comparison across that
+boundary is inadmissible, which retires a lot of this journal's clearance record
+as a reference for work done here.
+
+## 22. The expert had to be built before it could be matched
+
+`tools/expert_helm.py` computes what an expert would do rather than asserting it:
+an apex-cutting racing line under a hard footprint-clearance floor and a corridor
+cap, then a minimum-time speed profile on that line, executed as coordinated
+turns. Feasible cornering speed comes from the **real allocator** — a coordinated
+turn at speed `u` and curvature `k` needs `tau_x` = drag, `tau_y = m_u u² k`
+(centripetal, via the Coriolis term) and `tau_n` = yaw drag, all three checked
+against the shipped 4-thruster tangential layout. It reproduces this journal's own
+`Fx 98.99 / Fy 70.71 / Mz 67.18`.
+
+Two variants exist on purpose: `plant` (thrusters only) and `config` (also bounded
+by `nav2_mppi.yaml`). Only `config` is a fair tuning target; comparing MPPI to
+`plant` blames the controller for its configuration.
+
+**Scoring the reference with the real task scorer caught a defect immediately.**
+The first version scored 9/10 gates: the path began at the first gate and ended on
+the finish line, crossing neither, and it also omitted the 6 m from spawn. Fixed
+at both ends; now 10/10 on the channel, and `passed: True` with 0.999 laps on the
+sprint. **A reference nobody has scored is not a reference.**
+
+Result, at matched clearance and inside the same velocity limits:
+
+| | expert | measured | ratio |
+|---|---|---|---|
+| channel | **70.6 s** | 104.5 s | 1.48x |
+| sprint | **45.5 s** | 96.7 s | **2.12x** |
+
+The reference is insensitive to the clearance margin (70.0 s at 0.15 m, 70.8 s at
+0.40 m) because `vx_max` binds essentially everywhere — 98% of it is at the cap.
+That is the honest limit of its information content: stripped of narrative it says
+*"drive the whole course at the speed limit on a line 6.2 m shorter than the
+plan."* Apex-cutting and coordinated turns are not what makes 70 s.
+
+## 23. Four arms, one confirmed mechanism, nothing shipped yet
+
+| arm | change | registered falsifier | outcome |
+|---|---|---|---|
+| H1a | `time_steps` 56→72 + `prune_distance` 4.0→5.0 | elapsed ≥101 s, rotation ≥520° | **FALSIFIED both** — 107.7 s, 586° |
+| H5 | `PathFollowCritic` 5.0→14.0 | sprint clearance <0.130 m | **REJECTED on guard** — 0.055 m, contract FAIL, leg timed out |
+| I1 | local `cost_scaling_factor` 2.00→6.00 | elapsed ≥101.8 s | real (−3.5 s, 3σ) but **below MIN_EFFECT 5.0 s** |
+| R2 | `max_angle_to_furthest` 0.35→0.0 | rotation ≥556°, elapsed ≥101.8 s | **predictions MET, rejected on the sprint guard** |
+
+**H1a: the horizon axis is closed, and not for the reason the arm failed.** More
+look-ahead bought caution, not speed. It is also not testable as one parameter:
+`PathFollowCritic`'s cost minimum sits at `v* = prune_distance / (time_steps ×
+model_dt)`, so 72 steps at `prune_distance` 4.0 would have installed a speed
+limiter at 1.11 m/s, and raising `prune_distance` to avoid that moves
+`PathAlignCritic`'s pose-count gate (trap 9). `time_steps` also shifts arm J's
+`W_tw ≤ T·W_pa` break-even, which predicts the rotation rise that was measured.
+Four effects, one knob. Do not reopen.
+
+**H5 and the lesson about which task to run first.** The sprint was run first
+deliberately, because upstream's own header documents this knob's side effect as
+"creating some shortcutting". It failed on trial 1 — leg timed out, 0.01 laps,
+clearance 0.055 m — so the arm cost one trial instead of five. It also kills, for
+free, the same knob at 40.0. **The progress-vs-obstacle authority ratio cannot be
+fixed from the progress side.**
+
+**I1 and a floor I did not move.** 3.5 s at 3σ, clearance and sprint unchanged,
+zero CPU — and `compare_runs.py` sets `MIN_EFFECT['reached_seconds'] = 5.0`, so it
+scores as noise by the project's own rule. §5 rejected an 8.1 s gain on a
+criterion chosen in advance and wrote down why: *a rule that only binds when it
+costs nothing is not a rule.* A 5.0 s floor that becomes 3.0 s the moment a
+favourable number arrives is worth nothing afterwards. Held as a package
+candidate, not shipped.
+
+**R2 is the first mechanism in this phase to deliver a pre-registered
+prediction.** `PathAngleCritic.max_angle_to_furthest` is an early-return gate on
+the *current* pose, so below 0.35 rad the critic contributes nothing and above it
+arrives at weight 6.0 — a proportional corrector with a dead band, 0.15 s thruster
+lag and a 20 Hz loop, which is a limit-cycle recipe whose amplitude the dead band
+sets. Closing it:
+
+| endpoint | baseline | R2 | predicted |
+|---|---|---|---|
+| channel elapsed | 104.5 s | **98.4 s** | ≤99.5 ✓ |
+| total rotation | 581.9° | **517.0°** (5σ) | ≤530 ✓ |
+| terminal settle | 13.0 s | 10.2 s | (not registered) |
+
+And rejected anyway: sprint clearance 0.145/0.148 → **0.099/0.114 m**, breaching
+both registered guards, with 0.099 m sitting 0.0058 m above the contract floor.
+Sprint elapsed unchanged, so that clearance bought nothing there. The direction is
+the §10 pattern again — better tracking exposing a marginal plan. The response is
+a **dose**, not a re-reading.
+
+## 24. Two diagnoses proposed, both wrong as stated, and the instrument error behind them
+
+The alternate planner argued `CostCritic` dominance: its swing across the speed
+range is ~140 cost units against `PathFollowCritic`'s entire 4.3. I accepted it
+and built I1 on it.
+
+**It is a category error, and the critic caught it.** 140 is a *level*, 4.3 is a
+*range*. MPPI softmaxes on cost *differences* between rollouts, so a term adding
+the same cost to every rollout has exactly zero authority.
+
+Falsified on data already on disk, by splitting each run on whether any buoy lies
+within the 1.30 m inflation radius of a 3.64 m look-ahead — i.e. whether
+`CostCritic` can discriminate speed **at all**:
+
+| | frames blind | speed p50 blind | speed p50 with buoys in horizon |
+|---|---|---|---|
+| ch1 | 57% | 0.997 | 1.007 |
+| ch2 | 58% | 0.998 | 1.076 |
+| ch3 | 55% | 1.019 | 1.003 |
+
+The boat is not slower where obstacles are. Zero runs spent.
+
+**Confirmed independently by a zero-parameter control experiment.** A derived
+course keeping the channel's exact gate positions and headings (so path length and
+turn radii are identical) but with gates at 6.0 m and every free-standing buoy
+removed — nothing inflated within 0.9 m of the driving line:
+
+| | path | elapsed | speed |
+|---|---|---|---|
+| tight | 95.4 m | 104.5 s | 0.913 m/s |
+| **wide** | 90.0 m | **85.2 s** | **1.056 m/s** |
+| expert | 89.1 m | 70.6 s | 1.263 m/s |
+
+Removing **every** obstacle from the horizon reaches 1.06 m/s, not 1.30. It closes
+~40% of the deficit and leaves ~60% intrinsic to the controller. So obstacles
+matter for whole-course elapsed while not being what holds cruise speed down; both
+diagnoses were partly right about different things. (All three wide runs score
+9/10 because the finish gate sits exactly on the terminal waypoint — the same
+artefact as §22, and I failed to anticipate it twice.)
+
+**What is actually true.** On the obstacle-blind portion, `corr(speed, |wz|)` =
+**−0.33 / −0.38 / −0.44**, and speed p99 there is **1.274** against a p50 of 1.00.
+There is no flat speed deficit; there is a large-amplitude oscillation whose
+median is 1.0, and the boat demonstrably can hold 1.28. Reading that median as a
+level is the **third** instance in this journal of the same instrument error —
+§5a killed a diagnosis built on a median contaminated by slow frames, §20 killed a
+duration-biased `p05`, and this was mine. **Split the trace by regime before
+taking any statistic.**
+
+## 25. Retractions, mine
+
+1. **"Excess rotation costs time."** Probed on the real plant: yaw oscillation at
+   the *full* `wz_max` amplitude costs 2.0 s over 95.4 m, and at the measured
+   amplitude ~0.4 s. Max sway costs 36 s. Rotation is nearly free on a 67.2 N·m /
+   0.672 m layout. But the retraction was **over-generalised** — the hull is not
+   the only route from yaw to lost time, the controller is, and the controller is
+   what is being tuned. R2 then recovered 6.1 s by removing a yaw limit cycle. The
+   right statement: rotation costs almost nothing *hydrodynamically* and a great
+   deal *through the cost function*.
+2. **"PathFollowCritic is a speed regulator."** `findPathFurthestReachedPoint`
+   (utils.hpp:301) indexes off `xt::view(trajectories.x, all(), -1)` — the target
+   tracks where the **rollouts** reach, not the robot, so it runs away and cannot
+   pin speed. I adopted this reading because it explained the previous result in
+   one step; a mechanism that explains the last failure is the one to distrust.
+3. **Gap decomposition, wrong at both ends.** Terminal settle is 13.0 s inside the
+   last 1.5 m, not the ~3 s I reported. The standing start is ~4.4 s of *excess*,
+   the smallest item, not the largest — I had conflated elapsed with excess.
+4. **A registered falsifier with no instrument behind it.** H1a's "rotation
+   ≥520°" was invented; the within-config sd is **15.8°**, so 2σ on a difference
+   is 26° and H1a's 4.1° move was 0.32σ. Three baseline traces were on disk and
+   measuring them cost nothing.
+5. **A real bug in the tool defining the target.** `load_nav2_limits()` read
+   `ax_max`/`ax_min` and `speed_profile()` never applied them, so the
+   `config`-bounded reference braked at 3.61 m/s² against a configured 1.50. Worth
+   0.30 s — a footnote only because the reference spends 98% of its time at
+   `vx_max`. Found by the critic, not by me.
+
+## 26. Honest gap accounting
+
+Composed from measured pieces rather than from the 1.48x ratio:
+
+| item | s |
+|---|---|
+| terminal settle inside the last 1.5 m (13.0 s against ~1.5 s achievable) | ~11.5 |
+| open-water speed oscillation coupled to yaw | ~11 |
+| standing start | ~4.4 |
+| near buoys | ~4 |
+| racing line MPPI is forbidden to take (`PathAlignCritic` 14.0) | 4.7 |
+| leg handshake | ~1.4 |
+
+so **~25 s addressable, not the 34 s the raw ratio suggests**, and 4.7 s of that
+belongs to whoever chooses the course geometry rather than to MPPI.
+
+## 27. Findings that are not arms
+
+* **`smoother_server` is dead config.** It is in `LIFECYCLE_NODES`, launched
+  unconditionally, configured with `simple_smoother` — and **no behaviour tree
+  contains a `SmoothPath` node**. It starts, activates and is never called. The
+  plan *is* smoothed, by `SmacPlanner2D`'s internal smoother, whose parameters
+  (`GridBased.smoother.*`) are unset and therefore at nav2 defaults nobody here
+  chose.
+* **The global plan routes its own footprint through a buoy.** Over the 51 plans
+  logged in one channel run, worst hull clearance is **−0.092 m** at (26.0, 6.77),
+  beside the yellow buoy at (26.5, 6.2); 1 of 51 plans intersects. `CostCritic` is
+  the only thing preventing the boat from following it. True of the **shipped**
+  config, independent of any arm.
+* **The plan is rough.** It demands **907°** of turning over 95.4 m (median
+  9.50 deg/m) against the racing line's 282°. MPPI drove 575.8°, i.e. it already
+  attenuates the plan by 37%. On an analytically smooth path an offline surrogate
+  drove 197.8° for 192° required — ratio 1.03. **Given a smooth path this
+  controller does not hunt.**
+* **The optimiser was never tuned.** `temperature`, `gamma`, `iteration_count`,
+  `time_steps`, `batch_size` and the three sampling `std`s appear nowhere in the
+  first 2294 lines of this journal. Twenty-one entries moved critic weights and
+  velocity caps.
+* **`check_critics.py` cannot verify `PathFollowCritic`**, which logs no weight —
+  the same class of hole as the `twirling_cost_weight` dead key that cost this
+  workspace an experiment. It should be fixed before the next weight arm.
+* **New latent trap.** `PathAlignCritic.max_path_occupancy_ratio: 0.05` against a
+  pruned path of ~21 poses means **2 invalid poses out of 21 switches off the
+  largest weight in the file entirely** — an on/off cliff with a 5% trigger on a
+  rolling costmap fed by live lidar, invisible in every recorded metric.
+* **A fifth readiness-failure class.** One run died with `nav2 never reached
+  active` (the 150 s loop expired). Scored void and re-run. After a fixed sleep,
+  the action existing, lifecycle `active`, and the called server answering, this
+  is the fifth.
+
+## 28. Answering the question as posed
+
+*If a human expert were directly controlling the boat, is this what it would look
+like?* **No, and the differences are now measurable rather than aesthetic:**
+
+1. it spends **13.0 s of 104.5** inside the final 1.5 m, against ~1.5 s
+   achievable;
+2. in **empty water** its speed oscillates 0.64–1.27 m/s with the dips coupled to
+   yaw activity (r = −0.33 to −0.44), where an expert holds speed;
+3. it rotates **582° for 198° net** — though most of that excess is faithful
+   tracking of a plan that itself demands 907°;
+4. it reaches only **1.06 m/s with every obstacle removed from its horizon**,
+   against a 1.30 m/s cap whose p99 it already touches at 1.274.
+
+And the structural reason: **nothing in this cost function rewards speed.** The
+only progress term is a pursuit point worth 4.3 cost units across the entire
+speed range, while a relay-gated heading term, a speed-proportional `gamma` tax
+and a one-sided velocity-envelope penalty all oppose it. That is a statement about
+the configuration, not about MPPI — and it is why the one arm that delivered
+(R2, closing the relay) did so by removing an *opponent* of speed rather than by
+adding a reward for it.
+
+## 29. The relay dead band: one confirmed mechanism, and a trade that would not dissolve
+
+`PathAngleCritic.max_angle_to_furthest` is an early-return gate on the **current**
+pose, so below it the critic contributes nothing and above it arrives at weight
+6.0. A proportional corrector with a dead band, 0.15 s thruster lag and a 20 Hz
+loop is a limit-cycle recipe whose amplitude the dead band sets. Bracketed:
+
+| dose | channel elapsed | rotation | terminal settle | channel mean4 | sprint clearance |
+|---|---|---|---|---|---|
+| 0.35 (shipped) | 104.5 s | 581.9° | 13.0 s | 0.388 m | 0.146 m |
+| 0.15 | 100.1 s | 554.1° | 10.6 s | **0.417 m** | 0.118 m |
+| 0.00 | **98.4 s** | **517.0°** | **10.2 s** | 0.394 m | 0.107 m |
+
+Monotone in every column. **This is the first mechanism in this phase to deliver a
+pre-registered prediction** — 0.00 was registered at ≤530° and ≤99.5 s and hit
+both, the rotation move being 5σ against a within-config sd of 15.8°.
+
+Channel clearance does **not** degrade at either dose. On the duration-free
+per-gate readout this journal adopted in §20, 0.00 is +0.006 m and 0.15 is
++0.028 m, both inside noise, and 0.15's single-frame `min_clearance` is 0.054 m
+*better* than baseline. The apparent drop at 0.00 (0.221 → 0.196) is the
+extreme-value artefact §20 warns about. Both doses also improve clearance at the
+goal, by +0.104 m at 0.00 — consistent with removing a terminal limit cycle.
+
+**The whole cost is at the 2.4 m sprint gate**, which leaves 0.415 m of padded
+clearance a side against the channel's 0.60 m. Neither dose ships:
+
+* 0.00 clears `MIN_EFFECT` (6.1 s) but breaches the registered sprint guard
+  (0.107 m against 0.130), with one run 0.0058 m above the contract floor;
+* 0.15 breaches the guard *and* misses `MIN_EFFECT` (4.4 s against 5.0).
+
+Worth recording both ways round, because the two comparisons disagree and only one
+of them detects a change: 0.15's sprint clearance is **−1.09 sd from this
+contract's own frozen reference of 0.125 m**, i.e. the level the project already
+shipped — but it is a real −0.028 m against *this box's* baseline of 0.146, and
+same-box is the comparison that isolates the arm.
+
+### The per-task escape, and why it failed
+
+Nav2 supports one controller per task and `ControllerSelector` is already present
+in all three trees with `controller_id="{selected_controller}"` wired through, so
+a second `FollowPath` instance should have let the channel run 0.00 while the
+sprint kept 0.35. The two blocks were verified to hold 74 keys each and differ in
+exactly one, and `validate.py` grew a check that enforces exactly that (negative
+controlled: injecting a `vx_max` divergence fails it).
+
+**It failed twice over.**
+
+1. **The channel selected the wrong controller.** Its rotation came back 573.2° —
+   baseline 581.9°, not the 517.0° the 0.00 block would give — despite
+   `navigate_through_poses_boat.xml` carrying `default_controller="FollowPath"`
+   and `ros2 param get` confirming `FollowPath…max_angle_to_furthest = 0.0` and
+   `FollowPathSprint… = 0.35` on the live node.
+2. **A second instance costs ~10 s regardless.** With *both* blocks at 0.00 the
+   dead band was genuinely active (rotation 509.5°, matching 0.00) and the run
+   still took **108.9 s against the single-controller 98.4 s** — far outside the
+   1.66 s baseline sd. Only one controller should score per cycle; the cost is
+   nonetheless real and larger than the gain the arm was chasing.
+
+So the speed/clearance trade is **not** dissolvable this way, and a two-instance
+controller config is a new silent-failure surface — the fourth in this project
+after `twirling_cost_weight`, the `PathAlign` offset gate, and the never-called
+smoother. The R4 registration made the sprint a positive control precisely because
+of that history, and it is what caught the mis-selection.
+
+### A harness hole this exposed
+
+The isolation run printed **`result: PASS` with `min_clearance` 0.028 m** — a
+0.043 fraction against a 0.20 contract floor, at the free-standing buoy at
+(6.0, 31.5) this journal already records as bimodal. `task_trial.sh`'s own rule is
+only `transited == total and min_clearance > 0`; the contract check lives in
+`check_regression.py` and is not run for a bare label. **A bare trial can print
+PASS on a run that fails the contract outright.** Fix before the next arm.
