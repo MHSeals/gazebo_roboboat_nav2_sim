@@ -24,6 +24,31 @@ OUT="$WS/tuning"; mkdir -p "$OUT"
 SIM_LOG="/tmp/trial_${LABEL}_sim.log"
 NAV_LOG="/tmp/trial_${LABEL}_nav.log"
 
+# Optional alternate course. Both must be given together and must agree, or the
+# boat is scored against geometry it is not driving through -- which would look
+# like a navigation result and be a bookkeeping error. Default is unchanged.
+#
+#   COURSE=/ws/src/roboboat_description/config/course_wide.yaml \
+#   WORLD=/ws/src/roboboat_description/worlds/roboboat_course_wide.sdf \
+#   tools/task_trial.sh channel_wide wide_ch1
+#
+# Paths are container-absolute on purpose: a new world added to src/ is NOT
+# symlinked into install/ (worlds/ holds per-file symlinks and colcon has not
+# re-run), so pointing at src/ directly avoids a stale-install trap.
+WORLD_ARG=()
+COURSE_ARG=()
+if [[ -n "${COURSE:-}" || -n "${WORLD:-}" ]]; then
+  if [[ -z "${COURSE:-}" || -z "${WORLD:-}" ]]; then
+    echo "COURSE and WORLD must be set together" >&2; exit 2
+  fi
+  [[ -f "$COURSE" ]] || { echo "no such course: $COURSE" >&2; exit 2; }
+  [[ -f "$WORLD"  ]] || { echo "no such world: $WORLD"  >&2; exit 2; }
+  WORLD_ARG=("world:=$WORLD")
+  COURSE_ARG=(--course "$COURSE" --world "$WORLD")
+  echo "  course: $COURSE"
+  echo "  world : $WORLD"
+fi
+
 launch_group() {
   local pgid_file="$1"; shift
   local log="$1"; shift
@@ -46,7 +71,8 @@ pkill -KILL -f gz-sim-server 2>/dev/null; sleep 1
 CHASE_ARG="chase_camera:=false"
 [[ -n "${CHASE:-}" ]] && CHASE_ARG="chase_camera:=true"
 SIM_PGID=$(launch_group "/tmp/trial_${LABEL}_sim.pgid" "$SIM_LOG" \
-    ros2 launch roboboat_bringup sim.launch.py headless:=true "$CHASE_ARG")
+    ros2 launch roboboat_bringup sim.launch.py headless:=true "$CHASE_ARG" \
+        "${WORLD_ARG[@]}")
 
 if ! python3 "$WS/tools/wait_for_sim.py" --timeout 240; then
   echo "sim never became ready; see $SIM_LOG"; cleanup "$SIM_PGID"; exit 1
@@ -79,7 +105,8 @@ fi
 
 python3 "$WS/tools/task_run.py" --task "$TASK" \
     --record "$OUT/${LABEL}_trace.json" \
-    --scorecard "$OUT/${LABEL}_card.json"
+    --scorecard "$OUT/${LABEL}_card.json" \
+    "${COURSE_ARG[@]}"
 STATUS=$?
 
 if [[ -n "$CAP_PID" ]]; then

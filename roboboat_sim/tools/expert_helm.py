@@ -377,6 +377,25 @@ def score_trace(trace: dict, ref: dict) -> dict:
     x, y = f[:, idx['x']], f[:, idx['y']]
     speed = np.hypot(vx, vy)
 
+    # The recorded wz carries yaw-wrap spikes. Measured in h1a_ch1_trace.json:
+    # two consecutive frames at -125.63 and +125.61 rad/s at t = 105.1/105.3 s,
+    # and 2*pi / 0.05 s = 125.66 -- an angle difference taken across the +-pi
+    # branch cut without unwrapping, upstream of this tool in the odometry
+    # velocity. It is rare (2 frames of 993) and it is devastating to any
+    # integral or extremum: it inflated the same run's integral(|wz|)dt from
+    # 592 deg to 2155 deg, a 4x error, while percentiles survived because two
+    # frames cannot move a p99.
+    #
+    # Clamp against the plant's own steady-state yaw ceiling (2.47 rad/s) with
+    # margin rather than against wz_max, so a genuinely saturated run is kept
+    # and only the impossible is dropped. The count is reported, never silent:
+    # a trace that needs many of these repaired is a trace to distrust.
+    wz_ceiling = 3.0
+    wz_bad = np.abs(wz) > wz_ceiling
+    if wz_bad.any():
+        wz = np.where(wz_bad, np.nan, wz)
+        wz = np.interp(np.arange(len(wz)), np.flatnonzero(~wz_bad), wz[~wz_bad])
+
     moving = speed > 0.30
     fast = speed > 0.50
     # 1. sideslip: pointing where you are going. Needs a speed floor -- it is a
@@ -421,6 +440,11 @@ def score_trace(trace: dict, ref: dict) -> dict:
                                       max(np.sum(np.abs(dyaw)), 1e-9)), 3),
         'min_clearance_m': trace.get('min_clearance'),
         'expert_min_clearance_m': round(ref['min_clearance_m'], 3),
+        # Rotation, from the POSE signal and unwrapped, so it is immune to the
+        # wz spikes above. total/net is the "turning vs dithering" ratio.
+        'total_rotation_deg': round(float(np.degrees(np.sum(np.abs(dyaw)))), 1),
+        'expert_total_rotation_deg': None,
+        'wz_frames_repaired': int(wz_bad.sum()),
     }
 
 
