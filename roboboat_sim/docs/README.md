@@ -7,6 +7,7 @@ the demo and its Unity port.
 
 | Need | Read |
 | --- | --- |
+| Set up a checkout, establish a baseline, or choose a subsystem to change | [Getting started](getting_started.md) |
 | Run, build, validate, test, or diagnose startup | [Workspace README](../README.md) |
 | Understand processes, topics, frames, and ownership | [Architecture](architecture.md) |
 | Tune the Nav2 MPPI controller without exceeding boat authority | [MPPI tuning](mppi_tuning.md) |
@@ -18,11 +19,8 @@ the demo and its Unity port.
 
 ## Recommended reading paths
 
-- **New operator:** repository README (Podman setup) → workspace README →
-  Architecture → container `rb.sh help`.
-- **New contributor:** establish a headless baseline → Architecture → choose
-  one ownership boundary → run the smallest matching validation/test. The root
-  README explains this workflow and the reason GUI runs are not benchmarks.
+- **New operator or contributor:** repository README (Podman setup) →
+  [Getting started](getting_started.md) → Architecture → container `rb.sh help`.
 - **Controller/tuning work:** Architecture → MPPI tuning → Behavior trees →
   `python3 tools/validate.py` and the live tests in the workspace README.
 - **New task:** Task set → Behavior trees → `tools/task_run.py --help` →

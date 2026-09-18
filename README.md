@@ -65,22 +65,14 @@ container/rb.sh run 'cd /ws && bash tools/task_trial.sh channel demo'
 second stack on the host network: competing simulation clocks and TF publishers
 make Nav2 appear broken. `container/rb.sh help` explains the safe alternatives.
 
-## A good first direction for new contributors
+## Getting started and working in the repository
 
-1. Establish the baseline: build the image, run `container/rb.sh help`, then
-   run the headless channel trial. Do not tune from a GUI-observed run.
-2. Learn the boundaries in [Architecture](roboboat_sim/docs/architecture.md):
-   Gazebo owns sensors/world/ground-truth odometry; `roboboat_control` owns
-   achievable boat response; Nav2 owns planning and control.
-3. Choose one layer before editing: course/URDF and bridge, boat parameters,
-   Nav2 MPPI configuration, or task/behavior-tree policy. Keep vehicle limits
-   and task semantics out of each other's files.
-4. Run the cheapest relevant check first (`tools/validate.py`, unit tests, then
-   smoke/navigation/task trials). Use [the docs map](roboboat_sim/docs/README.md)
-   to find the owner and test for each subsystem.
-
-The `tuning/` archive records prior experiments; consult its journal when
-comparing results, not as a prerequisite to getting the baseline running.
+Follow the [getting-started guide](roboboat_sim/docs/getting_started.md) after
+installing Podman. It covers the missing steps between image build and launch:
+building the colcon workspace, establishing an offline and headless baseline,
+interactive operation, source rebuilds, subsystem ownership, and the matching
+verification path. It also distinguishes task results suitable for comparison
+from GUI runs intended for observation.
 
 ## Repository layout
 

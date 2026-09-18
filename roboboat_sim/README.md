@@ -10,7 +10,9 @@ The navigation stack is the product. The boat is a fixture.
 On a native ROS machine, follow [Quick start](#quick-start); for the supported
 Podman workflow, begin at the [repository README](../README.md). The
 [documentation map](docs/README.md) links architecture, tuning, task, Unity,
-and behavior-tree material.
+and behavior-tree material. New contributors should use
+[Getting started](docs/getting_started.md) to build a baseline before changing
+the simulator or Nav2 configuration.
 
 ---
 
@@ -255,6 +257,8 @@ Four things cost real time, and all four will happen again on your laptop:
 ## Documentation
 
 - [`docs/README.md`](docs/README.md) — documentation map and reading paths
+- [`docs/getting_started.md`](docs/getting_started.md) — container/native
+  baseline, development workflow, ownership boundaries, and verification paths
 - [`docs/architecture.md`](docs/architecture.md) — topic graph, frames, what
   each process owns, and what was verified against upstream source
 - [`docs/mppi_tuning.md`](docs/mppi_tuning.md) — why each non-default MPPI
