@@ -18,7 +18,11 @@ the demo and its Unity port.
 
 ## Recommended reading paths
 
-- **New operator:** workspace README → Architecture → container `rb.sh help`.
+- **New operator:** repository README (Podman setup) → workspace README →
+  Architecture → container `rb.sh help`.
+- **New contributor:** establish a headless baseline → Architecture → choose
+  one ownership boundary → run the smallest matching validation/test. The root
+  README explains this workflow and the reason GUI runs are not benchmarks.
 - **Controller/tuning work:** Architecture → MPPI tuning → Behavior trees →
   `python3 tools/validate.py` and the live tests in the workspace README.
 - **New task:** Task set → Behavior trees → `tools/task_run.py --help` →

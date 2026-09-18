@@ -10,10 +10,28 @@ It covers native ROS installation, validation, launch modes, testing, and the
 simulation's intentional shortcuts. The documentation map is
 [`roboboat_sim/docs/README.md`](roboboat_sim/docs/README.md).
 
-## Container quick start
+## Container setup
 
-The supported container runtime is rootless Podman. Run these from this
-repository root:
+The supported runtime is **rootless Podman on Linux**. Install it using the
+[official Podman installation guide](https://podman.io/docs/installation), then
+confirm `podman info` succeeds as your normal user. On Ubuntu 24.04, the
+distribution package is usually sufficient:
+
+```bash
+sudo apt update && sudo apt install podman
+podman info
+```
+
+Docker is not the supported path: `container/rb.sh` invokes Podman directly and
+relies on its rootless behavior. Docker users can adapt the `Containerfile`,
+but should expect to translate runtime flags and validate ROS 2 discovery,
+shared memory, and GUI access themselves.
+
+For GUI runs, also use a local graphical Linux session with a usable `DISPLAY`.
+The default software renderer is intentional and works without GPU passthrough;
+see `container/rb.sh help` before setting `RB_GPU=1`.
+
+From this repository root:
 
 ```bash
 container/rb.sh help                 # commands, prerequisites, and examples
@@ -32,6 +50,23 @@ container/rb.sh run 'cd /ws && bash tools/task_trial.sh channel demo'
 `gui` and `task` intentionally share one running container. Do not start a
 second stack on the host network: competing simulation clocks and TF publishers
 make Nav2 appear broken. `container/rb.sh help` explains the safe alternatives.
+
+## A good first direction for new contributors
+
+1. Establish the baseline: build the image, run `container/rb.sh help`, then
+   run the headless channel trial. Do not tune from a GUI-observed run.
+2. Learn the boundaries in [Architecture](roboboat_sim/docs/architecture.md):
+   Gazebo owns sensors/world/ground-truth odometry; `roboboat_control` owns
+   achievable boat response; Nav2 owns planning and control.
+3. Choose one layer before editing: course/URDF and bridge, boat parameters,
+   Nav2 MPPI configuration, or task/behavior-tree policy. Keep vehicle limits
+   and task semantics out of each other's files.
+4. Run the cheapest relevant check first (`tools/validate.py`, unit tests, then
+   smoke/navigation/task trials). Use [the docs map](roboboat_sim/docs/README.md)
+   to find the owner and test for each subsystem.
+
+The `tuning/` archive records prior experiments; consult its journal when
+comparing results, not as a prerequisite to getting the baseline running.
 
 ## Repository layout
 
