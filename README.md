@@ -14,13 +14,27 @@ simulation's intentional shortcuts. The documentation map is
 
 The supported runtime is **rootless Podman on Linux**. Install it using the
 [official Podman installation guide](https://podman.io/docs/installation), then
-confirm `podman info` succeeds as your normal user. On Ubuntu 24.04, the
-distribution package is usually sufficient:
+confirm `podman info` succeeds as your normal user. The distribution package is
+usually sufficient:
 
 ```bash
+# Debian / Ubuntu
 sudo apt update && sudo apt install podman
+
+# Fedora / RHEL / Rocky / AlmaLinux (DNF-based releases)
+sudo dnf install podman
+
+# Arch Linux
+sudo pacman -S podman
+
 podman info
 ```
+
+Use the package manager that matches the host; do not run all three blocks.
+On RHEL systems without `dnf`, use the equivalent `yum install podman`. A
+current distribution release is recommended because the project needs rootless
+containers, host networking, and GUI socket mounts. The official guide covers
+additional distributions and repository setup when the system package is old.
 
 Docker is not the supported path: `container/rb.sh` invokes Podman directly and
 relies on its rootless behavior. Docker users can adapt the `Containerfile`,
