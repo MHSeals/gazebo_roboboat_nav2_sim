@@ -1,5 +1,10 @@
 # The RoboBoat task set, and how each one lands in this sim
 
+Start with the [workspace README](../README.md) for how to run a task. This
+page answers what belongs in task geometry, scoring, Nav2 configuration, or a
+[behavior tree](behavior_trees.md). For the original migration rationale, see
+the historical [multi-task plan](task_plan.md).
+
 The 2026 competition runs six tasks on one course. A scored run visits them in
 sequence; nothing is reloaded between them. This document is the map from each
 task to the machinery it needs here, so that adding one is a known amount of

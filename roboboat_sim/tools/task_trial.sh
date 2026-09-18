@@ -13,6 +13,33 @@
 # Generalises trial_run.sh, which could only run the whole channel.
 set -o pipefail
 
+case "${1:-}" in
+  -h|--help|help)
+    cat <<'USAGE'
+usage: task_trial.sh [task] [label]
+
+Launch a private headless Gazebo + Nav2 stack, run one declared task, score it,
+write tuning/<label>_{trace,card}.json, then tear the stack down. Use this for
+repeatable measurements; use `container/rb.sh gui` + `rb.sh task` to watch an
+unscored live run instead.
+
+  task    task name from `python3 tools/task_run.py --list` (default: channel)
+  label   output-file prefix (default: task name)
+
+Examples:
+  bash tools/task_trial.sh channel baseline
+  CHASE=1 bash tools/task_trial.sh sprint filmed_sprint
+
+For an alternate course, set both paths so scoring and simulation geometry
+match:
+  COURSE=/ws/src/roboboat_description/config/course_wide.yaml \
+  WORLD=/ws/src/roboboat_description/worlds/roboboat_course_wide.sdf \
+  bash tools/task_trial.sh channel_wide wide_trial
+USAGE
+    exit 0
+    ;;
+esac
+
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TASK="${1:-channel}"
 LABEL="${2:-$TASK}"

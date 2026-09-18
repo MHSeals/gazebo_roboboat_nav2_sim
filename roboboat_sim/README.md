@@ -6,6 +6,12 @@ configuration that will later be ported to a 1:1 Unity simulator.
 
 The navigation stack is the product. The boat is a fixture.
 
+**Start here:** this is a colcon workspace, not a standalone Python project.
+On a native ROS machine, follow [Quick start](#quick-start); for the supported
+Podman workflow, begin at the [repository README](../README.md). The
+[documentation map](docs/README.md) links architecture, tuning, task, Unity,
+and behavior-tree material.
+
 ---
 
 ## The trade this workspace makes
@@ -54,7 +60,9 @@ Every Nav2 and Gazebo parameter name in here was checked against the `jazzy` /
 
 ---
 
-## What you can do right now, without a laptop
+## Quick start
+
+### Offline checks (no ROS, Gazebo, or GPU)
 
 Everything below runs on plain Python — no ROS, no Gazebo, no GPU. It is
 enough to keep developing the parts that matter.
@@ -93,7 +101,7 @@ would miss.
 
 ---
 
-## Once you have a machine
+### Native ROS + Gazebo setup
 
 ```bash
 sudo apt install ros-jazzy-desktop ros-jazzy-navigation2 \
@@ -124,6 +132,15 @@ ros2 launch roboboat_bringup boat_nav.launch.py headless:=true rviz:=false
 Useful arguments: `mode:=kinematic` (bypass the thruster model entirely, to
 tell "MPPI is misconfigured" apart from "the boat cannot do that"),
 `use_velocity_smoother:=true`, `nav2_params:=<your file>`.
+
+Discover every launch argument and its description with:
+
+```bash
+ros2 launch roboboat_bringup sim.launch.py --show-args
+ros2 launch roboboat_bringup boat_nav.launch.py --show-args
+ros2 launch roboboat_bringup nav2.launch.py --show-args
+python3 tools/task_run.py --help
+```
 
 On startup the dynamics node logs the boat's achievable envelope:
 
@@ -237,10 +254,15 @@ Four things cost real time, and all four will happen again on your laptop:
 
 ## Documentation
 
+- [`docs/README.md`](docs/README.md) — documentation map and reading paths
 - [`docs/architecture.md`](docs/architecture.md) — topic graph, frames, what
   each process owns, and what was verified against upstream source
 - [`docs/mppi_tuning.md`](docs/mppi_tuning.md) — why each non-default MPPI
   parameter is what it is, and the order to tune them in
+- [`docs/behavior_trees.md`](docs/behavior_trees.md) — Nav2 task/recovery
+  orchestration, shipped trees, and how to add one
+- [`docs/tasks.md`](docs/tasks.md) — competition task mapping, scoring, and
+  when a task needs a tree versus a plugin/configuration change
 - [`docs/unity_port.md`](docs/unity_port.md) — the interface contract to hold
   fixed so this config drops onto the 1:1 sim
 

@@ -1,5 +1,9 @@
 # Porting this Nav2 config to the 1:1 Unity sim
 
+Read [Architecture](architecture.md) for the current Gazebo ownership model,
+[MPPI tuning](mppi_tuning.md) for vehicle-dependent limits, and
+[Behavior trees](behavior_trees.md) for task-policy portability.
+
 The whole point of this workspace is that the Nav2 side should move across
 unchanged. That holds only if Unity presents the same interface Gazebo does
 here.

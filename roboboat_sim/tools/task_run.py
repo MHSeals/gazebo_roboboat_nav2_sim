@@ -339,12 +339,20 @@ class TaskRun(Node):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--task', default='channel')
-    parser.add_argument('--course', type=Path, default=None)
-    parser.add_argument('--world', type=Path, default=None)
-    parser.add_argument('--record', type=Path, default=None)
-    parser.add_argument('--scorecard', type=Path, default=None)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=('Requires an active Nav2 stack. List tasks first with --list. '
+                'For a self-contained headless run, use tools/task_trial.sh.'))
+    parser.add_argument('--task', default='channel',
+                        help='declared task name (default: channel)')
+    parser.add_argument('--course', type=Path, default=None,
+                        help='course YAML; defaults to the installed course')
+    parser.add_argument('--world', type=Path, default=None,
+                        help='world SDF used for obstacle scoring')
+    parser.add_argument('--record', type=Path, default=None,
+                        help='write recorded telemetry JSON to this path')
+    parser.add_argument('--scorecard', type=Path, default=None,
+                        help='write pass/fail scorecard JSON to this path')
     parser.add_argument('--list', action='store_true',
                         help='print the declared tasks and exit')
     args = parser.parse_args()

@@ -1,5 +1,10 @@
 # Architecture
 
+For setup and smoke tests, start with the [workspace README](../README.md).
+This page explains the boundaries that must remain stable when tuning Nav2,
+adding tasks, or moving to Unity. Behavior-tree orchestration is documented
+separately in [Behavior trees](behavior_trees.md).
+
 ## Process and topic graph
 
 ```

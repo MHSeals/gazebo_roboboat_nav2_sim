@@ -117,6 +117,47 @@ exec_in_stack() {
 }
 
 case "${1:-shell}" in
+  help|--help|-h)
+    cat >&2 <<'USAGE'
+usage: rb.sh <command>
+
+Container operator for the RoboBoat Gazebo + Nav2 workspace. Run from any
+directory; the workspace is mounted at /ws. Requires rootless podman. `gui`
+also requires a working host X display (DISPLAY defaults to :0).
+
+  build                   build the roboboat:jazzy image
+  gui [launch args...]    start one visible Gazebo + RViz + Nav2 stack
+  shell                   interactive shell in a fresh container
+  run <cmd...>            run a command in a fresh container
+
+  tasks                   list tasks on the ALREADY-RUNNING gui stack
+  task <name> [label]     run one task on that visible stack; an optional
+                          label writes tuning/<label>_{trace,card}.json
+
+Common workflow:
+  rb.sh build
+  rb.sh gui                              # terminal 1
+  rb.sh tasks && rb.sh task channel      # terminal 2
+
+Repeatable, scored, headless workflow (do not run gui at the same time):
+  rb.sh run 'cd /ws && bash tools/task_trial.sh channel demo'
+
+Useful launch arguments for gui:
+  headless:=true rviz:=false             no on-screen GUI, faster iteration
+  mode:=kinematic                        bypass allocation/dynamics diagnosis
+  use_velocity_smoother:=true            add Nav2's velocity smoother
+  nav2_params:=/ws/path/to/params.yaml   test a parameter-file variant
+
+Why one stack? Containers use host networking for ROS 2 DDS. A second Gazebo
+server publishes another /clock and TF authority, which corrupts costmaps.
+Use `podman exec -it $(podman ps -q --filter ancestor=roboboat:jazzy | head -1) bash`
+for an additional shell in the live stack.
+
+Set RB_GPU=1 to expose /dev/dri. The default is software rendering because it
+is more reliable across host/container Mesa versions.
+USAGE
+    exit 0
+    ;;
   build)
     exec podman build -t "$IMAGE" -f "$HERE/Containerfile" "$HERE"
     ;;
@@ -219,6 +260,8 @@ usage: rb.sh <command>
   task <name> [label]     drive one task against the ALREADY-RUNNING stack,
                           so it can be watched. With a label, also writes
                           tuning/<label>_{trace,card}.json.
+
+  help                    show prerequisites, workflow, and launch arguments
 
 Watch a task run:
   rb.sh gui &             (or in another terminal)

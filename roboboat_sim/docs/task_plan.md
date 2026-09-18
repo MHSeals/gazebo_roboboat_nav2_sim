@@ -3,6 +3,10 @@
 Status: **proposal, under review.** Nothing in `course_default.yaml` has been
 modified yet.
 
+This is the design record behind the implemented [task set](tasks.md), not the
+operator guide. For current task execution and scoring, start there; for
+task-specific Nav2 policy, see [Behavior trees](behavior_trees.md).
+
 ## What we have
 
 One course file, one flat list of ten gates, one runner (`tools/course_run.py`)

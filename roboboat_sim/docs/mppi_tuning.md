@@ -1,6 +1,10 @@
 # Tuning MPPI for the boat
 
 Everything below refers to `src/roboboat_bringup/config/nav2_mppi.yaml`.
+Read [Architecture](architecture.md) first for frames and data ownership, and
+[Behavior trees](behavior_trees.md) for the separate policy that invokes MPPI
+and handles recoveries. Validate each parameter edit with the workspace
+README's offline and live test sequence.
 
 ## Non-default parameters, and why
 

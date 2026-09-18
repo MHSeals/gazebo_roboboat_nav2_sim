@@ -1,5 +1,10 @@
 # Handoff: re-do the thruster layout, then re-tune and re-test Nav2
 
+This is an experiment handoff and result record. For normal operation, begin
+with the [workspace README](../README.md); after any propulsion change, follow
+[MPPI tuning](mppi_tuning.md), [Behavior trees](behavior_trees.md), and the
+documented regression sequence before trusting task results.
+
 You are picking up a working RoboBoat simulator. Read this before touching
 anything; most of it is things that have already cost a run to learn.
 

@@ -15,6 +15,27 @@
 # (AMENT_TRACE_SETUP_FILES and friends) and dies instantly under it.
 set -o pipefail
 
+case "${1:-}" in
+  -h|--help|help)
+    cat <<'USAGE'
+usage: run_test.sh {smoke|nav} [test args...]
+
+Starts a private headless stack, runs the selected test, prints relevant log
+errors, and tears the complete Gazebo process group down.
+
+  smoke   boat, bridge, TF, lidar, and dynamics checks
+  nav     full Nav2 stack and goal-navigation checks
+
+Examples:
+  bash tools/run_test.sh smoke
+  bash tools/run_test.sh nav --goals "14,1,0.2 30,8,0.7"
+
+Pass `python3 tools/nav_test.py --help` arguments after `nav`.
+USAGE
+    exit 0
+    ;;
+esac
+
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="${1:-smoke}"
 shift || true
